@@ -49,7 +49,7 @@ const Sidebar = ({ isOpen, onClose }) => {
               <span className="text-xl font-bold">B</span>
             </div>
             <div>
-              <h2 className="text-lg font-bold">Big Ideas LC</h2>
+              <h2 className="text-lg font-bold">MAGISTR O'QUV MARKAZI</h2>
               <p className="text-xs text-gray-400">ERP System</p>
             </div>
           </div>
