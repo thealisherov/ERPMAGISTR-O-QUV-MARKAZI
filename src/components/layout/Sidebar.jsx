@@ -49,7 +49,7 @@ const Sidebar = ({ isOpen, onClose }) => {
               <img src="/favicon-32x32.png" alt="Logo" className="w-8 h-8 object-contain" />
             </div>
             <div>
-              <h2 className="text-lg font-bold">MAGISTR O'QUV MARKAZI</h2>
+              <h2 className="text-lg font-bold">MAGISTR BILIM DARGOHI</h2>
               <p className="text-xs text-gray-400">ERP System</p>
             </div>
           </div>
