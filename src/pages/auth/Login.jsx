@@ -14,20 +14,18 @@ const Login = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    // Space'larni o'chirib salmoqda trim() yordamida
+
     const trimmedCredentials = {
       username: credentials.username.trim(),
       password: credentials.password.trim(),
     };
+
     const result = await login(trimmedCredentials);
+
     if (result.success) {
-      // Kichik delay - state yangilanishi uchun
-      setTimeout(() => {
-        // Rol asosida yo'naltirilish
-        const userRole = localStorage.getItem('user') ? JSON.parse(localStorage.getItem('user')).role : 'ADMIN';
-        const redirectPath = userRole === 'SUPER_ADMIN' ? '/users' : '/dashboard';
-        navigate(redirectPath, { replace: true });
-      }, 100);
+      // Navigate to dashboard for all roles
+      // The dashboard component will handle role-based view
+      navigate('/dashboard', { replace: true });
     }
   };
 
@@ -124,8 +122,6 @@ const Login = () => {
               )}
             </button>
           </form>
-
-          
         </div>
 
         <p className="text-center text-sm text-gray-500 mt-6">

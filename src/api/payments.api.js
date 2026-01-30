@@ -1,41 +1,42 @@
 import api from './axios';
-import { getUserBranchId } from './helpers';
 
 export const paymentsApi = {
-  getAll: (params = {}) => {
-    const branchId = getUserBranchId();
-    return api.get('/payments', { params: { branchId, ...params } });
+  // --- Admin Operations ---
+  getPending: () => {
+    return api.get('/admin/payments/pending');
   },
-  getById: (id) => api.get(`/payments/${id}`),
+
+  confirm: (id) => {
+    return api.post(`/admin/payments/${id}/confirm`);
+  },
+
+  getByTeacher: (teacherId) => {
+    return api.get(`/admin/payments/teacher/${teacherId}`);
+  },
+
+  getByStudent: (studentId) => {
+    return api.get(`/admin/payments/student/${studentId}`);
+  },
+
+  getByGroup: (groupId) => {
+    return api.get(`/admin/payments/group/${groupId}`);
+  },
+
+  // --- Teacher Operations ---
   create: (paymentData) => {
-    const branchId = getUserBranchId();
-    return api.post('/payments', { ...paymentData, branchId });
+    return api.post('/teacher/payments', paymentData);
   },
-  update: (id, paymentData) => {
-    return api.put(`/payments/${id}`, paymentData);
+
+  getTeacherPayments: () => {
+    return api.get('/teacher/payments');
   },
-  delete: (id) => api.delete(`/payments/${id}`),
-  getUnpaid: (params = {}) => {
-    const branchId = getUserBranchId();
-    return api.get('/payments/unpaid', { params: { branchId, ...params } });
+
+  getTeacherStats: () => {
+    return api.get('/teacher/payments/stats');
   },
-  getByStudent: (studentId, params = {}) => {
-    return api.get(`/payments/student/${studentId}`, { params });
-  },
-  search: (params = {}) => {
-    const branchId = getUserBranchId();
-    return api.get('/payments/search', { params: { branchId, ...params } });
-  },
-  getRecent: (params = {}) => {
-    const branchId = getUserBranchId();
-    return api.get('/payments/recent', { params: { branchId, ...params } });
-  },
-  getByMonth: (params = {}) => {
-    const branchId = getUserBranchId();
-    return api.get('/payments/by-month', { params: { branchId, ...params } });
-  },
-  getByDateRange: (params = {}) => {
-    const branchId = getUserBranchId();
-    return api.get('/payments/by-date-range', { params: { branchId, ...params } });
+
+  // --- Student Operations ---
+  getStudentPayments: () => {
+    return api.get('/student/payments');
   },
 };

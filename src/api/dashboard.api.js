@@ -1,14 +1,30 @@
 import api from './axios';
-import { getUserBranchId } from './helpers';
 
 export const dashboardApi = {
-  getStats: () => {
-    // branchId ni helper orqali olish
-    const branchId = getUserBranchId();
-    
-    // Agar branchId mavjud bo'lsa, parametr sifatida yuborish
-    const params = branchId ? { branchId } : {};
-    
-    return api.get('/dashboard/stats', { params });
+  getAdminDashboard: () => {
+    return api.get('/admin/dashboard');
   },
+
+  getTeacherDashboard: () => {
+    return api.get('/teacher/dashboard');
+  },
+
+  getStudentDashboard: () => {
+    return api.get('/student/dashboard');
+  },
+
+  getDashboardByRole: (role) => {
+    if (!role) return Promise.reject(new Error('Role is required'));
+
+    switch (role) {
+      case 'ADMIN':
+        return dashboardApi.getAdminDashboard();
+      case 'TEACHER':
+        return dashboardApi.getTeacherDashboard();
+      case 'STUDENT':
+        return dashboardApi.getStudentDashboard();
+      default:
+        return Promise.reject(new Error(`Unknown role: ${role}`));
+    }
+  }
 };
