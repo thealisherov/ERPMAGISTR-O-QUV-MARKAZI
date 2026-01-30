@@ -1,77 +1,56 @@
-// import api from './axios';
-
-// export const studentsApi = {
-//   getAll: (params) => api.get('/students', { params }),
-//   getById: (id) => api.get(`/students/${id}`),
-//   create: (studentData) => api.post('/students', studentData),
-//   update: (id, studentData) => api.put(`/students/${id}`, studentData),
-//   delete: (id) => api.delete(`/students/${id}`),
-//   getPaymentHistory: (id) => api.get(`/students/${id}/payment-history`),
-//   getGroups: (id) => api.get(`/students/${id}/groups`),
-//   getUnpaid: (params) => api.get('/students/unpaid', { params }),
-//   getStatistics: (params) => api.get('/students/statistics', { params }),
-//   search: (params) => api.get('/students/search', { params }),
-//   getRecent: (params) => api.get('/students/recent', { params }),
-//   getByPaymentStatus: (params) => api.get('/students/by-payment-status', { params }),
-//   getByGroup: (groupId, params) => api.get(`/students/by-group`, { params: { groupId, ...params } }),
-// };
-
-// src/api/students.api.js
 import api from './axios';
-import { getUserBranchId } from './helpers';
 
 export const studentsApi = {
-  getAll: (params = {}) => {
-    const branchId = getUserBranchId();
-    return api.get('/students', { params: { branchId, ...params } });
+  // --- Admin/Teacher Operations on Students ---
+  // Note: These endpoints require ADMIN or TEACHER role (check SecurityConfig)
+
+  getAll: () => {
+    return api.get('/admin/users/role/STUDENT');
   },
   
-  getById: (id, params = {}) => {
-    return api.get(`/students/${id}`, { params });
+  getById: (id) => {
+    return api.get(`/admin/users/${id}`);
   },
   
   create: (studentData) => {
-    const branchId = getUserBranchId();
-    return api.post('/students', { ...studentData, branchId });
+    // Ensure role is set to STUDENT
+    return api.post('/admin/users', { ...studentData, role: 'STUDENT' });
   },
   
   update: (id, studentData) => {
-    const branchId = getUserBranchId();
-    return api.put(`/students/${id}`, { ...studentData, branchId });
+    return api.put(`/admin/users/${id}`, studentData);
   },
   
-  delete: (id) => api.delete(`/students/${id}`),
-  
-  getPaymentHistory: (id) => api.get(`/students/${id}/payment-history`),
-  
-  getGroups: (id) => api.get(`/students/${id}/groups`),
-  
-  getUnpaid: (params = {}) => {
-    const branchId = getUserBranchId();
-    return api.get('/students/unpaid', { params: { branchId, ...params } });
+  delete: (id) => {
+    return api.delete(`/admin/users/${id}`);
   },
   
-  getStatistics: (params = {}) => {
-    const branchId = getUserBranchId();
-    return api.get('/students/statistics', { params: { branchId, ...params } });
+  // --- Student's Own Data (Logged in Student) ---
+  getMyDashboard: () => {
+    return api.get('/student/dashboard');
   },
   
-  search: (params = {}) => {
-    const branchId = getUserBranchId();
-    return api.get('/students/search', { params: { branchId, ...params } });
+  getMyGroups: () => {
+    return api.get('/student/groups');
   },
   
-  getRecent: (params = {}) => {
-    const branchId = getUserBranchId();
-    return api.get('/students/recent', { params: { branchId, ...params } });
+  getMyAttendance: () => {
+    return api.get('/student/attendance');
   },
   
-  getByPaymentStatus: (params = {}) => {
-    const branchId = getUserBranchId();
-    return api.get('/students/by-payment-status', { params: { branchId, ...params } });
+  getMyAttendanceSummary: () => {
+    return api.get('/student/attendance/summary');
   },
   
-  getByGroup: (groupId, params = {}) => {
-    return api.get(`/students/by-group`, { params: { groupId, ...params } });
+  getMyPayments: () => {
+    return api.get('/student/payments');
   },
+  
+  getMyCoins: () => {
+    return api.get('/student/coins');
+  },
+
+  getCoinSummary: () => {
+    return api.get('/student/coins/summary');
+  }
 };

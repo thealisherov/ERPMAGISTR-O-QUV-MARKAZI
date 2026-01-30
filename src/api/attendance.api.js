@@ -1,41 +1,34 @@
 import api from './axios';
-import { getUserBranchId } from './helpers';
 
 export const attendanceApi = {
-  // Bulk davomat (barcha o'quvchilar uchun bir vaqtda)
-  markBulk: (data) => {
-    const branchId = getUserBranchId();
-    return api.post('/attendance/bulk', { ...data, branchId });
+  // --- Teacher Operations ---
+  mark: (data) => {
+    return api.post('/teacher/attendance', data);
   },
 
-  // Bitta o'quvchi uchun davomat
-  markAttendance: (data) => {
-    const branchId = getUserBranchId();
-    return api.post('/attendance', { ...data, branchId });
+  update: (id, data) => {
+    return api.put(`/teacher/attendance/${id}`, data);
   },
 
-  // Guruh uchun ma'lum sanada davomatni olish
-  getByGroupAndDate: (groupId, date) => {
-    // date formatda: "YYYY-MM-DD" (LocalDate format)
-    return api.get(`/attendance/group/${groupId}/date/${date}`);
+  getByGroupForTeacher: (groupId) => {
+    return api.get(`/teacher/attendance/group/${groupId}`);
   },
 
-  // O'quvchining ma'lum oy uchun davomat tarixi
-  getStudentAttendanceByMonth: (studentId, groupId, year, month) => {
-    return api.get(`/attendance/student/${studentId}/group/${groupId}/month`, {
-      params: { year, month }
-    });
+  // --- Student Operations ---
+  getMyAttendance: () => {
+    return api.get('/student/attendance');
   },
 
-  // Guruhning ma'lum oy uchun davomat xulosasi
-  getGroupSummary: (groupId, year, month) => {
-    return api.get(`/attendance/group/${groupId}/summary`, {
-      params: { year, month }
-    });
+  getMySummary: () => {
+    return api.get('/student/attendance/summary');
   },
 
-  // Davomatni o'chirish
-  delete: (id) => {
-    return api.delete(`/attendance/${id}`);
-  }
+  // --- Admin Operations ---
+  getByGroup: (groupId) => {
+    return api.get(`/admin/attendance/group/${groupId}`);
+  },
+
+  getByStudent: (studentId) => {
+    return api.get(`/admin/attendance/student/${studentId}`);
+  },
 };

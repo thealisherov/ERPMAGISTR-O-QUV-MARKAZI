@@ -1,14 +1,14 @@
 export const API_ENDPOINTS = {
   AUTH: {
     LOGIN: '/auth/login',
-    LOGOUT: '/auth/logout',
+    LOGOUT: '/auth/logout', // Not supported by backend
     REGISTER: '/auth/register',
-    REFRESH: '/auth/refresh',
-    ME: '/auth/me',
+    REFRESH: '/auth/refresh', // Not supported by backend
+    ME: '/auth/profile',
   },
-  USERS: '/users',
-  STUDENTS: '/students',
-  TEACHERS: '/teachers',
+  USERS: '/admin/users',
+  STUDENTS: '/student',
+  TEACHERS: '/teacher',
   GROUPS: '/groups',
   PAYMENTS: '/payments',
   EXPENSES: '/expenses',
@@ -31,4 +31,3 @@ export const STORAGE_KEYS = {
   TOKEN: 'token',
   USER: 'user',
 };
-

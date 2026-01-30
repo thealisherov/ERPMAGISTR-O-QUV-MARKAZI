@@ -1,16 +1,27 @@
 import api from './axios';
-import { getUserBranchId } from './helpers';
 
 export const usersApi = {
-  getAll: (params) => api.get('/users', { params }),
-  getById: (id) => api.get(`/users/${id}`),
-  create: (userData) => api.post('/users', userData),
-  update: (id, userData) => api.put(`/users/${id}`, userData),
-  delete: (id) => api.delete(`/users/${id}`),
-  getByBranch: (branchId) => api.get(`/users/branch/${branchId}`),
-  // Helper for admin to get users of their own branch
-  getMyBranchUsers: () => {
-    const branchId = getUserBranchId();
-    return api.get(`/users/branch/${branchId}`);
-  }
+  getAll: () => {
+    return api.get('/admin/users');
+  },
+
+  getById: (id) => {
+    return api.get(`/admin/users/${id}`);
+  },
+
+  getByRole: (role) => {
+    return api.get(`/admin/users/role/${role}`);
+  },
+
+  create: (userData) => {
+    return api.post('/admin/users', userData);
+  },
+
+  update: (id, userData) => {
+    return api.put(`/admin/users/${id}`, userData);
+  },
+
+  delete: (id) => {
+    return api.delete(`/admin/users/${id}`);
+  },
 };

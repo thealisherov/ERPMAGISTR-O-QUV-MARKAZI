@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: "https://college-production-a68e.up.railway.app/api",
+  baseURL: "http://localhost:8080/api",
   headers: {
     'Content-Type': 'application/json',
   },
@@ -13,11 +13,26 @@ api.interceptors.request.use(
     const token = localStorage.getItem('token');
     if (token && token !== 'undefined' && token !== 'null') {
       config.headers.Authorization = `Bearer ${token}`;
-      // Debugging uchun
-      if (import.meta.env.DEV) {
-        console.log('Request with token:', config.url);
+    }
+
+    // Add X-User-Id header if user is logged in
+    const userStr = localStorage.getItem('user');
+    if (userStr && userStr !== 'undefined' && userStr !== 'null') {
+      try {
+        const user = JSON.parse(userStr);
+        if (user.userId) {
+          config.headers['X-User-Id'] = user.userId;
+        }
+      } catch (e) {
+        console.error('Error parsing user from localStorage', e);
       }
     }
+
+    // Debugging
+    if (import.meta.env.DEV) {
+      console.log(`Request: ${config.method.toUpperCase()} ${config.url}`);
+    }
+
     return config;
   },
   (error) => {
@@ -34,17 +49,14 @@ api.interceptors.response.use(
     
     console.error(`[API Error] ${status} - ${url}`, error.response?.data);
     
-    // Faqat 401'da logout qil (token muddati o'tgan)
     if (status === 401) {
-      console.warn('401 Unauthorized - Tokenning muddati o\'tgan');
+      console.warn('401 Unauthorized - Token expired or invalid');
       localStorage.removeItem('token');
       localStorage.removeItem('user');
-      localStorage.removeItem('refreshToken');
       window.location.href = '/login';
     }
-    // 403'da ham logout qil lekin boshqacha xabar ayt
     else if (status === 403) {
-      console.error('403 Forbidden - Ruxsat yo\'q');
+      console.error('403 Forbidden - Permission denied');
     }
     
     return Promise.reject(error);
