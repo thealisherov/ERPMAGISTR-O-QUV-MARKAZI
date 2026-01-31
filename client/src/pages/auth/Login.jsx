@@ -48,7 +48,7 @@ const Login = () => {
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
-                Email
+                Login (Email)
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -56,13 +56,13 @@ const Login = () => {
                 </div>
                 <input
                   id="email"
-                  type="email"
+                  type="text"
                   value={credentials.email}
                   onChange={(e) =>
                     setCredentials({ ...credentials, email: e.target.value })
                   }
                   className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                  placeholder="Email kiriting"
+                  placeholder="Login yoki Email kiriting"
                   required
                 />
               </div>

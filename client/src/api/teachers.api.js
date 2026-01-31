@@ -12,7 +12,7 @@ export const teachersApi = {
   },
 
   create: (teacherData) => {
-    return api.post('/admin/users', { ...teacherData, role: 'TEACHER' });
+    return api.post('/auth/register', { ...teacherData, role: 'TEACHER' });
   },
 
   update: (id, teacherData) => {

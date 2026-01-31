@@ -10,6 +10,8 @@ import {
   FiBook,
   FiDollarSign,
   FiTrash2,
+  FiMail,
+  FiLock
 } from "react-icons/fi";
 
 const StudentDetails = () => {
@@ -74,7 +76,7 @@ const StudentDetails = () => {
     <div className="p-6 bg-gray-50 min-h-screen">
       <div className="mb-6">
         <h1 className="text-3xl font-bold text-gray-900">
-          {student.firstName} {student.lastName}
+           {student.fullName}
         </h1>
         <p className="text-gray-600">O'quvchi haqida batafsil ma'lumot</p>
       </div>
@@ -84,10 +86,10 @@ const StudentDetails = () => {
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <div className="flex flex-col items-center mb-6">
             <div className="w-24 h-24 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-3xl font-bold mb-4">
-              {student.firstName ? student.firstName.charAt(0).toUpperCase() : "?"}
+              {student.fullName ? student.fullName.charAt(0).toUpperCase() : "?"}
             </div>
-            <h2 className="text-xl font-bold text-gray-900">
-              {student.firstName} {student.lastName}
+            <h2 className="text-xl font-bold text-gray-900 text-center">
+              {student.fullName}
             </h2>
             <span className="px-3 py-1 bg-green-100 text-green-800 rounded-full text-xs font-semibold mt-2">
               Aktiv
@@ -98,17 +100,22 @@ const StudentDetails = () => {
             <div className="flex items-start gap-3 text-gray-600">
               <FiPhone className="text-gray-400 mt-1" />
               <div>
-                <p>{student.phoneNumber || "Telefon kiritilmagan"}</p>
-                {student.parentPhoneNumber && (
-                   <p className="text-sm text-gray-500 mt-1">Ota-onasi: {student.parentPhoneNumber}</p>
-                )}
+                <p>{student.phone || "Telefon kiritilmagan"}</p>
               </div>
+            </div>
+            <div className="flex items-center gap-3 text-gray-600">
+              <FiMail className="text-gray-400" />
+              <span>Login: <span className="font-semibold text-gray-800">{student.email}</span></span>
+            </div>
+             <div className="flex items-center gap-3 text-gray-600">
+              <FiLock className="text-gray-400" />
+              <span className="text-sm italic text-gray-400">Parol shifrlangan (ko'rinmaydi)</span>
             </div>
             <div className="flex items-center gap-3 text-gray-600">
               <FiCalendar className="text-gray-400" />
               <span>
                 Qo'shilgan sana:{" "}
-                {new Date(student.createdAt).toLocaleDateString()}
+                {new Date(student.createdAt || Date.now()).toLocaleDateString()}
               </span>
             </div>
           </div>

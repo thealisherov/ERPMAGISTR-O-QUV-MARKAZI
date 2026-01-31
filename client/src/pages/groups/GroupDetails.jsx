@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { groupsApi } from '../../api/groups.api';
 import { studentsApi } from '../../api/students.api';
+import { teachersApi } from '../../api/teachers.api';
 import { attendanceApi } from '../../api/attendance.api';
 import { useAuth } from '../../hooks/useAuth';
 import {
@@ -37,8 +38,12 @@ const GroupDetails = () => {
 
   // Fetch Group
   const { data: group, isLoading: groupLoading } = useQuery({
-    queryKey: ['group', id],
+    queryKey: ['group', id, user?.role],
     queryFn: async () => {
+      if (user?.role === 'TEACHER') {
+        const res = await teachersApi.getGroupById(id);
+        return res.data;
+      }
       const res = await groupsApi.getById(id);
       return res.data;
     },
@@ -47,8 +52,12 @@ const GroupDetails = () => {
 
   // Fetch Group Students
   const { data: groupStudents = [] } = useQuery({
-    queryKey: ['groupStudents', id],
+    queryKey: ['groupStudents', id, user?.role],
     queryFn: async () => {
+        if (user?.role === 'TEACHER') {
+             const res = await teachersApi.getGroupStudents(id);
+             return res.data;
+        }
         const res = await groupsApi.getGroupStudents(id);
         return res.data;
     },
@@ -230,7 +239,9 @@ const GroupDetails = () => {
                         groupStudents.map((student) => (
                             <tr key={student.id} className="hover:bg-gray-50">
                                 <td className="px-4 md:px-6 py-4 text-sm font-medium text-gray-900">
-                                    {student.fullName}
+                                    <Link to={`/students/${student.id}`} className="hover:text-blue-600 hover:underline">
+                                        {student.fullName}
+                                    </Link>
                                 </td>
                                 <td className="px-6 py-4 text-sm text-gray-500 hidden md:table-cell">
                                     {student.phone || '-'}

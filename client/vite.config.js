@@ -11,4 +11,13 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  server: {
+    proxy: {
+      '/api': {
+        target: 'https://magister-production-a4a6.up.railway.app',
+        changeOrigin: true,
+        secure: false,
+      }
+    }
+  },
 })

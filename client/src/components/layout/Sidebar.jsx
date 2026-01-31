@@ -20,10 +20,10 @@ const Sidebar = ({ isOpen, onClose }) => {
   const { logout, user } = useAuth();
 
   const menuItems = [
-    { path: '/dashboard', label: 'Dashboard', icon: FiHome, roles: ['ADMIN'] },
+    { path: '/dashboard', label: 'Dashboard', icon: FiHome, roles: ['ADMIN', 'TEACHER', 'STUDENT'] },
     { path: '/students', label: 'O\'quvchilar', icon: FiUsers, roles: ['ADMIN'] },
     { path: '/teachers', label: 'O\'qituvchilar', icon: FiUserCheck, roles: ['ADMIN'] },
-    { path: '/groups', label: 'Guruhlar', icon: FiGrid, roles: ['ADMIN'] },
+    { path: '/groups', label: 'Guruhlar', icon: FiGrid, roles: ['ADMIN', 'TEACHER', 'STUDENT'] },
     { path: '/payments', label: 'To\'lovlar', icon: FiCreditCard, roles: ['ADMIN'] },
     { path: '/salary', label: 'Maoshlar', icon: FiBriefcase, roles: ['ADMIN'] },
     { path: '/expenses', label: 'Xarajatlar', icon: FiDollarSign, roles: ['ADMIN'] },
