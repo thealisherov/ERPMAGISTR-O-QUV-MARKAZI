@@ -1,0 +1,8 @@
+[phases.setup]
+nixPkgs = ['maven', 'jdk17']
+
+[phases.build]
+cmds = ['mvn clean package -DskipTests']
+
+[start]
+cmd = 'java -Xmx512m -jar target/crm-system-1.0.0.jar'

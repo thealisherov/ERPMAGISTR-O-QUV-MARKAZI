@@ -1,0 +1,1 @@
+web: java -Xmx512m -jar target/crm-system-1.0.0.jar
