@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
-import { FiEye, FiEyeOff, FiUser, FiLock } from 'react-icons/fi';
+import { FiEye, FiEyeOff, FiMail, FiLock } from 'react-icons/fi';
 
 const Login = () => {
   const navigate = useNavigate();
   const [credentials, setCredentials] = useState({
-    username: '',
+    email: '',
     password: '',
   });
   const [showPassword, setShowPassword] = useState(false);
@@ -16,7 +16,7 @@ const Login = () => {
     e.preventDefault();
 
     const trimmedCredentials = {
-      username: credentials.username.trim(),
+      email: credentials.email.trim(),
       password: credentials.password.trim(),
     };
 
@@ -47,22 +47,22 @@ const Login = () => {
 
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
-              <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-2">
-                Username
+              <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
+                Login (Email)
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <FiUser className="h-5 w-5 text-gray-400" />
+                  <FiMail className="h-5 w-5 text-gray-400" />
                 </div>
                 <input
-                  id="username"
+                  id="email"
                   type="text"
-                  value={credentials.username}
+                  value={credentials.email}
                   onChange={(e) =>
-                    setCredentials({ ...credentials, username: e.target.value })
+                    setCredentials({ ...credentials, email: e.target.value })
                   }
                   className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                  placeholder="Username kiriting"
+                  placeholder="Login yoki Email kiriting"
                   required
                 />
               </div>

@@ -105,7 +105,7 @@ const router = createBrowserRouter([
       },
       {
         path: 'dashboard',
-        element: <RoleProtectedRoute element={<Dashboard />} allowedRoles={['ADMIN']} />,
+        element: <RoleProtectedRoute element={<Dashboard />} allowedRoles={['ADMIN', 'TEACHER', 'STUDENT']} />,
       },
       {
         path: 'students',
@@ -113,7 +113,7 @@ const router = createBrowserRouter([
       },
       {
         path: 'students/:id',
-        element: <RoleProtectedRoute element={<StudentDetails />} allowedRoles={['ADMIN']} />,
+        element: <RoleProtectedRoute element={<StudentDetails />} allowedRoles={['ADMIN', 'TEACHER']} />,
       },
       {
         path: 'teachers',
@@ -125,11 +125,11 @@ const router = createBrowserRouter([
       },
       {
         path: 'groups',
-        element: <RoleProtectedRoute element={<Groups />} allowedRoles={['ADMIN']} />,
+        element: <RoleProtectedRoute element={<Groups />} allowedRoles={['ADMIN', 'TEACHER', 'STUDENT']} />,
       },
       {
         path: 'groups/:id',
-        element: <RoleProtectedRoute element={<GroupDetails />} allowedRoles={['ADMIN']} />,
+        element: <RoleProtectedRoute element={<GroupDetails />} allowedRoles={['ADMIN', 'TEACHER', 'STUDENT']} />,
       },
       {
         path: 'payments',

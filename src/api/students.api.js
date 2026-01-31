@@ -14,7 +14,7 @@ export const studentsApi = {
   
   create: (studentData) => {
     // Ensure role is set to STUDENT
-    return api.post('/admin/users', { ...studentData, role: 'STUDENT' });
+    return api.post('/auth/register', { ...studentData, role: 'STUDENT' });
   },
   
   update: (id, studentData) => {

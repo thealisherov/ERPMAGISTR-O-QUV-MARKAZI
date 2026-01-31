@@ -3,8 +3,8 @@ import { API_ENDPOINTS } from '../utils/constants';
 
 export const authApi = {
   login: async (credentials) => {
-    // credentials: { username, password }
-    // Backend expects LoginRequest: { username, password }
+    // credentials: { email, password }
+    // Backend expects LoginRequest: { email, password }
     return api.post(API_ENDPOINTS.AUTH.LOGIN, credentials);
   },
   
