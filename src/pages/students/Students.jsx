@@ -1,14 +1,19 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { studentsApi } from '../../api/students.api';
+import { teachersApi } from '../../api/teachers.api';
 import { groupsApi } from '../../api/groups.api';
 import { FiSearch, FiPlus, FiEdit2, FiTrash2, FiEye, FiEyeOff, FiCheck, FiMail, FiPhone, FiUser, FiLock } from 'react-icons/fi';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import Modal from '../../components/common/Modal';
+import ConfirmDialog from '../../components/common/ConfirmDialog';
+import { parseDeleteError } from '../../utils/errorParser';
+import { useAuth } from '../../hooks/useAuth';
 
 const Students = () => {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
 
   // Modal State
@@ -16,6 +21,7 @@ const Students = () => {
   const [editingStudent, setEditingStudent] = useState(null);
   const [formError, setFormError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState({ open: false, studentId: null, studentName: '' });
   
   // Initial state for form
   const initialFormState = {
@@ -28,20 +34,39 @@ const Students = () => {
 
   const [formData, setFormData] = useState(initialFormState);
 
+  // Check if user is ADMIN or TEACHER
+  const isAdmin = user?.role === 'ADMIN';
+  const isTeacher = user?.role === 'TEACHER';
+  const canManageStudents = isAdmin || isTeacher;
+
   const { data: students = [], isLoading: loading } = useQuery({
-    queryKey: ['students'],
+    queryKey: ['students', user?.role],
     queryFn: async () => {
+      if (isTeacher) {
+        const response = await teachersApi.getMyStudents();
+        return response.data;
+      }
       const response = await studentsApi.getAll();
       return response.data;
     },
+    enabled: !!user,
+    staleTime: 0,
+    cacheTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: false,
   });
 
   const { data: groups = [] } = useQuery({
-    queryKey: ['groups'],
+    queryKey: ['groups', user?.role],
     queryFn: async () => {
+      if (isTeacher) {
+        const response = await teachersApi.getMyGroups();
+        return response.data;
+      }
       const response = await groupsApi.getAll();
       return response.data;
     },
+    enabled: !!user,
   });
 
   // Telefon raqam formatlash - +998 kiritish
@@ -94,7 +119,7 @@ const Students = () => {
       return newStudent;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries(['students']);
+      queryClient.invalidateQueries({ queryKey: ['students', user?.role] });
       setIsModalOpen(false);
       toast.success("O'quvchi muvaffaqiyatli qo'shildi");
     },
@@ -108,22 +133,46 @@ const Students = () => {
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }) => {
-      // Update logic: Only fullName and phone are updateable via this endpoint
-      // based on UpdateUserRequest DTO in backend
+      // Backend UpdateUserRequest: { fullName, phone, email, password, role }
       const updateData = {
         fullName: data.fullName,
-        phone: data.phone
-        // email, password, role are not updateable here
+        phone: data.phone,
+        email: data.email,
+        // Only include password if it was changed (not empty)
+        ...(data.password && { password: data.password })
       };
-      return studentsApi.update(id, updateData);
+      
+      console.log('🔄 UPDATE REQUEST:');
+      console.log('  Student ID:', id);
+      console.log('  User Role:', user?.role);
+      console.log('  Data being sent:', updateData);
+      
+      let response;
+      if (isTeacher) {
+        console.log('  📡 Endpoint: PUT /teacher/students/' + id);
+        response = await teachersApi.updateStudent(id, updateData);
+      } else {
+        console.log('  📡 Endpoint: PUT /users/' + id);
+        response = await studentsApi.update(id, updateData);
+      }
+      
+      console.log('✅ UPDATE RESPONSE:');
+      console.log('  Status:', response.status);
+      console.log('  Updated student:', response.data);
+      
+      return response;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries(['students']);
+      queryClient.invalidateQueries({ queryKey: ['students', user?.role] });
+      queryClient.invalidateQueries({ queryKey: ['student'] }); // Also invalidate detail pages
       setIsModalOpen(false);
       toast.success("O'quvchi muvaffaqiyatli yangilandi");
+      console.log('✨ Cache invalidated and modal closed');
     },
     onError: (error) => {
-      console.error('Error updating student:', error);
+      console.error('❌ UPDATE ERROR:', error);
+      console.error('  Error response:', error.response?.data);
+      console.error('  Error status:', error.response?.status);
       const msg = error.response?.data?.message || 'Xatolik yuz berdi';
       setFormError(msg);
       toast.error(msg);
@@ -133,12 +182,14 @@ const Students = () => {
   const deleteMutation = useMutation({
     mutationFn: (id) => studentsApi.delete(id),
     onSuccess: () => {
-      queryClient.invalidateQueries(['students']);
+      queryClient.invalidateQueries({ queryKey: ['students', user?.role] });
       toast.success("O'quvchi muvaffaqiyatli o'chirildi");
     },
     onError: (error) => {
       console.error('Error deleting student:', error);
-      toast.error(error.response?.data?.message || 'Xatolik yuz berdi');
+      const msg = parseDeleteError(error, "O'quvchi");
+      toast.error(msg, { duration: 7000 });
+      alert(msg);
     }
   });
 
@@ -176,21 +227,43 @@ const Students = () => {
     e.preventDefault();
     setFormError('');
 
+    console.log('📝 FORM SUBMIT TRIGGERED');
+    console.log('  Editing student:', editingStudent);
+    console.log('  Form data:', formData);
+
+    // Teacher validation: Must select at least one group
+    // Backend requirements: Teachers can only see/manage students who are enrolled in their groups.
+    // Therefore, creating a student without a group makes them invisible/inaccessible to the teacher.
+    // Validation: Must select at least one group
+    // Requirement: O'quvchi yaratish formasi validation bor (guruh majburiy)
+    if (!editingStudent && formData.groupIds.length === 0) {
+        const errorMsg = "Iltimos, o'quvchini kamida bitta guruhga qo'shing. Guruh tanlash majburiy.";
+        setFormError(errorMsg);
+        toast.error("Guruh tanlanishi shart");
+        return;
+    }
+
     try {
       if (editingStudent) {
+        console.log('🔄 Calling updateMutation...');
         await updateMutation.mutateAsync({ id: editingStudent.id, data: formData });
       } else {
+        console.log('➕ Calling createMutation...');
         await createMutation.mutateAsync(formData);
       }
     } catch (error) {
       // Handled in mutation callbacks
+      console.error('💥 Submit error caught:', error);
     }
   };
 
-  const handleDelete = async (id) => {
-    if (window.confirm('Haqiqatan ham bu o\'quvchini o\'chirmoqchimisiz?\nESLATMA: Agar o\'quvchining to\'lovlari yoki boshqa bog\'liq ma\'lumotlari bo\'lsa, xatolik berishi mumkin.')) {
-      deleteMutation.mutate(id);
-    }
+  const handleDelete = (student) => {
+    setDeleteConfirm({ open: true, studentId: student.id, studentName: student.fullName || 'Nomsiz' });
+  };
+
+  const confirmDeleteStudent = () => {
+    deleteMutation.mutate(deleteConfirm.studentId);
+    setDeleteConfirm({ open: false, studentId: null, studentName: '' });
   };
 
   const filteredStudents = students.filter(student =>
@@ -205,13 +278,15 @@ const Students = () => {
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">O'quvchilar</h1>
           <p className="text-gray-600 mt-1">Barcha o'quvchilar ro'yxati</p>
         </div>
-        <button
-          onClick={() => handleOpenModal()}
-          className="cursor-pointer w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 transition-all shadow-md hover:shadow-lg"
-        >
-          <FiPlus className="h-5 w-5" />
-          Yangi O'quvchi
-        </button>
+        {canManageStudents && (
+          <button
+            onClick={() => handleOpenModal()}
+            className="cursor-pointer w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 transition-all shadow-md hover:shadow-lg"
+          >
+            <FiPlus className="h-5 w-5" />
+            Yangi O'quvchi
+          </button>
+        )}
       </div>
 
       <div className="bg-white rounded-xl shadow-md p-4 sm:p-6 mb-6">
@@ -244,9 +319,6 @@ const Students = () => {
                                   <FiMail className="text-gray-400" /> {student.email}
                                 </p>
                              </div>
-                             <span className={`px-2 py-1 text-xs font-semibold rounded-full ${student.active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                                {student.active ? 'Aktiv' : 'Nofaol'}
-                             </span>
                         </div>
                         <p className="text-sm text-gray-500 mb-4 flex items-center gap-2">
                           <FiPhone className="text-gray-400" /> {student.phone || 'Tel: N/A'}
@@ -259,18 +331,22 @@ const Students = () => {
                               >
                                 <FiEye className="h-5 w-5" />
                               </Link>
-                              <button
-                                onClick={() => handleOpenModal(student)}
-                                className="p-2 text-green-600 bg-green-50 rounded-lg hover:bg-green-100"
-                              >
-                                <FiEdit2 className="h-5 w-5" />
-                              </button>
-                              <button
-                                onClick={() => handleDelete(student.id)}
-                                className="p-2 text-red-600 bg-red-50 rounded-lg hover:bg-red-100"
-                              >
-                                <FiTrash2 className="h-5 w-5" />
-                              </button>
+                              {canManageStudents && (
+                                <>
+                                  <button
+                                    onClick={() => handleOpenModal(student)}
+                                    className="p-2 text-green-600 bg-green-50 rounded-lg hover:bg-green-100"
+                                  >
+                                    <FiEdit2 className="h-5 w-5" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDelete(student)}
+                                    className="p-2 text-red-600 bg-red-50 rounded-lg hover:bg-red-100"
+                                  >
+                                    <FiTrash2 className="h-5 w-5" />
+                                  </button>
+                                </>
+                              )}
                         </div>
                     </div>
                 ))
@@ -288,7 +364,8 @@ const Students = () => {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ism Familiya</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Login (Email)</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Telefon</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+
+
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Amallar</th>
               </tr>
             </thead>
@@ -304,22 +381,23 @@ const Students = () => {
                     <td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900">{student.fullName}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{student.email}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{student.phone || 'N/A'}</td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${student.active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                        {student.active ? 'Aktiv' : 'Nofaol'}
-                      </span>
-                    </td>
+
+
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <div className="flex justify-end gap-2">
                         <Link to={`/students/${student.id}`} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
                           <FiEye className="h-4 w-4" />
                         </Link>
-                        <button onClick={() => handleOpenModal(student)} className="cursor-pointer p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors">
-                          <FiEdit2 className="h-4 w-4" />
-                        </button>
-                        <button onClick={() => handleDelete(student.id)} className="cursor-pointer p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors">
-                          <FiTrash2 className="h-4 w-4" />
-                        </button>
+                        {canManageStudents && (
+                          <>
+                            <button onClick={() => handleOpenModal(student)} className="cursor-pointer p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors">
+                              <FiEdit2 className="h-4 w-4" />
+                            </button>
+                            <button onClick={() => handleDelete(student)} className="cursor-pointer p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                              <FiTrash2 className="h-4 w-4" />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -360,44 +438,49 @@ const Students = () => {
               />
           </div>
 
-          {/* Email - Readonly in Edit */}
+          {/* Email */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Login (Email)</label>
             <input
               type="text"
               required
-              disabled={!!editingStudent}
-              className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all ${!!editingStudent ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''}`}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all"
               value={formData.email}
               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
               placeholder="user123"
             />
+            {editingStudent && (
+              <p className="text-xs text-gray-500 mt-1">Login o'zgartirilsa, yangi login bilan kirish kerak bo'ladi</p>
+            )}
           </div>
 
-           {/* Password - Only for Create */}
-           {!editingStudent && (
-             <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Parol</label>
-                <div className="relative">
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      required
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all pr-10"
-                      value={formData.password}
-                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                      placeholder="******"
-                      minLength={6}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="cursor-pointer absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
-                    >
-                      {showPassword ? <FiEyeOff className="h-5 w-5" /> : <FiEye className="h-5 w-5" />}
-                    </button>
-                </div>
-             </div>
-           )}
+          {/* Password */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              {editingStudent ? 'Yangi Parol (ixtiyoriy)' : 'Parol'}
+            </label>
+            <div className="relative">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                required={!editingStudent}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all pr-10"
+                value={formData.password}
+                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                placeholder={editingStudent ? "Bo'sh qoldiring agar o'zgartirmoqchi bo'lmasangiz" : '******'}
+                minLength={editingStudent ? 0 : 6}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="cursor-pointer absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+              >
+                {showPassword ? <FiEyeOff className="h-5 w-5" /> : <FiEye className="h-5 w-5" />}
+              </button>
+            </div>
+            {editingStudent && (
+              <p className="text-xs text-gray-500 mt-1">Parolni o'zgartirish uchun yangi parol kiriting. Bo'sh qoldiring agar saqlamoqchi bo'lsangiz.</p>
+            )}
+          </div>
 
           {/* Phone */}
           <div>
@@ -414,7 +497,9 @@ const Students = () => {
           {/* Groups Selection - Only for Create */}
           {!editingStudent && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Guruhlarga qo'shish</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Guruhlarga qo'shish <span className="text-red-500 text-xs font-normal">(Majburiy)</span>
+              </label>
               <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto p-2 border border-gray-200 rounded-lg">
                 {groups.map(group => (
                   <div
@@ -441,7 +526,7 @@ const Students = () => {
               </div>
             </div>
           )}
-          
+
           {editingStudent && (
             <div className="bg-yellow-50 p-3 rounded-lg text-sm text-yellow-800">
               Guruhlarni o'zgartirish uchun guruh sahifasiga o'ting yoki admin panelidan foydalaning.
@@ -466,6 +551,18 @@ const Students = () => {
           </div>
         </form>
       </Modal>
+
+      <ConfirmDialog
+        isOpen={deleteConfirm.open}
+        title="O'quvchini o'chirish"
+        message={`"${deleteConfirm.studentName}" o'quvchisini o'chirmoqchimisiz?\n\nESLATMA: Agar o'quvchining to'lovlari yoki boshqa bog'liq ma'lumotlari bo'lsa, xatolik berishi mumkin.`}
+        confirmText="Ha, o'chirish"
+        cancelText="Bekor qilish"
+        variant="danger"
+        onConfirm={confirmDeleteStudent}
+        onCancel={() => setDeleteConfirm({ open: false, studentId: null, studentName: '' })}
+        loading={deleteMutation.isPending}
+      />
     </div>
   );
 };

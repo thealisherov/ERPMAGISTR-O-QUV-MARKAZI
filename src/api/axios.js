@@ -1,7 +1,8 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: import.meta.env.DEV ? "/api" : "https://magister-production-a4a6.up.railway.app/api",
+  baseURL: "https://magister-production-a4a6.up.railway.app/api",
+  
   headers: {
     'Content-Type': 'application/json',
   },
@@ -28,10 +29,17 @@ api.interceptors.request.use(
       }
     }
 
-    // Debugging
-    if (import.meta.env.DEV) {
-      console.log(`Request: ${config.method.toUpperCase()} ${config.url}`);
+    // DETAILED LOGGING FOR ALL REQUESTS
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('📤 REQUEST:', config.method.toUpperCase(), config.url);
+    console.log('   Headers:', {
+      'X-User-Id': config.headers['X-User-Id'],
+      'Authorization': config.headers.Authorization ? 'Bearer ***' : 'None'
+    });
+    if (config.data) {
+      console.log('   Request Body:', config.data);
     }
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
     return config;
   },
@@ -42,12 +50,25 @@ api.interceptors.request.use(
 
 // Response interceptor
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // DETAILED LOGGING FOR ALL RESPONSES
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('📥 RESPONSE:', response.config.method.toUpperCase(), response.config.url);
+    console.log('   Status:', response.status, response.statusText);
+    console.log('   Response Data:', response.data);
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    
+    return response;
+  },
   (error) => {
     const status = error.response?.status;
     const url = error.config?.url;
     
-    console.error(`[API Error] ${status} - ${url}`, error.response?.data);
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.error('❌ ERROR RESPONSE:', error.config?.method?.toUpperCase(), url);
+    console.error('   Status:', status);
+    console.error('   Error Data:', error.response?.data);
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     
     if (status === 401) {
       console.warn('401 Unauthorized - Token expired or invalid');

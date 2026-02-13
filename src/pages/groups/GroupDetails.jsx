@@ -14,9 +14,13 @@ import {
   FiArrowLeft,
   FiMessageSquare,
   FiSearch,
-  FiCheckCircle
+  FiCheckCircle,
+  FiAward,
+  FiStar
 } from 'react-icons/fi';
 import Modal from '../../components/common/Modal';
+import ConfirmDialog from '../../components/common/ConfirmDialog';
+import { parseDeleteError } from '../../utils/errorParser';
 import toast from 'react-hot-toast';
 
 const GroupDetails = () => {
@@ -25,16 +29,24 @@ const GroupDetails = () => {
   const { user } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
   const isTeacher = user?.role === 'TEACHER';
+  const isStudent = user?.role === 'STUDENT';
   
   const [isAddStudentModalOpen, setIsAddStudentModalOpen] = useState(false);
   const [selectedStudentId, setSelectedStudentId] = useState('');
   const [studentSearchTerm, setStudentSearchTerm] = useState('');
+  const [removeConfirm, setRemoveConfirm] = useState({ open: false, studentId: null, studentName: '' });
 
   const [isAttendanceModalOpen, setIsAttendanceModalOpen] = useState(false);
   const [attendanceDate, setAttendanceDate] = useState(
     new Date().toISOString().split('T')[0]
   );
   const [attendanceList, setAttendanceList] = useState({}); // { studentId: status }
+
+  // Coin system states
+  const [isCoinModalOpen, setIsCoinModalOpen] = useState(false);
+  const [selectedStudentForCoin, setSelectedStudentForCoin] = useState(null);
+  const [coinAmount, setCoinAmount] = useState(10);
+  const [coinReason, setCoinReason] = useState('');
 
   // Fetch Group
   const { data: group, isLoading: groupLoading } = useQuery({
@@ -43,6 +55,12 @@ const GroupDetails = () => {
       if (user?.role === 'TEACHER') {
         const res = await teachersApi.getGroupById(id);
         return res.data;
+      }
+      if (user?.role === 'STUDENT') {
+        const res = await studentsApi.getMyGroups();
+        const group = res.data.find(g => g.id === Number(id));
+        if (!group) throw new Error("Guruh topilmadi");
+        return group;
       }
       const res = await groupsApi.getById(id);
       return res.data;
@@ -58,10 +76,23 @@ const GroupDetails = () => {
              const res = await teachersApi.getGroupStudents(id);
              return res.data;
         }
+        if (user?.role === 'STUDENT') {
+             return [];
+        }
         const res = await groupsApi.getGroupStudents(id);
         return res.data;
     },
     enabled: !!id
+  });
+
+  // Fetch Leaderboard (Coin ranking)
+  const { data: leaderboard = [] } = useQuery({
+    queryKey: ['leaderboard', id],
+    queryFn: async () => {
+      const res = await teachersApi.getGroupLeaderboard(id);
+      return res.data;
+    },
+    enabled: !!id && isTeacher
   });
 
   // Fetch All Students (for adding)
@@ -74,11 +105,34 @@ const GroupDetails = () => {
       enabled: isAddStudentModalOpen && isAdmin
   });
 
+  // Fetch My Payments (Student only)
+  const { data: myPayments = [] } = useQuery({
+    queryKey: ['myPayments'],
+    queryFn: async () => {
+      const res = await studentsApi.getMyPayments();
+      return res.data;
+    },
+    enabled: isStudent
+  });
+
+  // Fetch My Coins (Student only)
+  const { data: myCoins = [] } = useQuery({
+    queryKey: ['myCoins'],
+    queryFn: async () => {
+      const res = await studentsApi.getMyCoins();
+      return res.data;
+    },
+    enabled: isStudent
+  });
+
+  const groupPayments = myPayments.filter(p => p.groupId === Number(id));
+  const groupCoins = myCoins.filter(c => c.groupId === Number(id));
+
   // Add student mutation
   const addStudentMutation = useMutation({
       mutationFn: ({ groupId, studentId }) => groupsApi.addStudent(groupId, studentId),
       onSuccess: () => {
-          queryClient.invalidateQueries(['groupStudents', id]);
+          queryClient.invalidateQueries({ queryKey: ['groupStudents', id] });
           setIsAddStudentModalOpen(false);
           setSelectedStudentId('');
           setStudentSearchTerm('');
@@ -93,13 +147,50 @@ const GroupDetails = () => {
   const removeStudentMutation = useMutation({
       mutationFn: ({ groupId, studentId }) => groupsApi.removeStudent(groupId, studentId),
       onSuccess: () => {
-          queryClient.invalidateQueries(['groupStudents', id]);
+          queryClient.invalidateQueries({ queryKey: ['groupStudents', id] });
           toast.success("O'quvchi guruhdan olib tashlandi");
       },
       onError: (err) => {
-          toast.error(err.response?.data?.message || "Xatolik yuz berdi");
+          console.error('Remove student error:', err);
+          const msg = parseDeleteError(err, "O'quvchi");
+          toast.error(msg, { duration: 5000 });
       }
   });
+
+  // Award coins mutation
+  const awardCoinsMutation = useMutation({
+    mutationFn: (data) => teachersApi.awardCoins(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries(['leaderboard', id]);
+      setIsCoinModalOpen(false);
+      setSelectedStudentForCoin(null);
+      setCoinAmount(10);
+      setCoinReason('');
+      toast.success("Coin muvaffaqiyatli berildi! 🎉");
+    },
+    onError: (err) => {
+      toast.error(err.response?.data?.message || "Xatolik yuz berdi");
+    }
+  });
+
+  const handleOpenCoinModal = (student) => {
+    setSelectedStudentForCoin(student);
+    setCoinAmount(10);
+    setCoinReason('');
+    setIsCoinModalOpen(true);
+  };
+
+  const handleAwardCoins = (e) => {
+    e.preventDefault();
+    if (!selectedStudentForCoin || coinAmount <= 0) return;
+    
+    awardCoinsMutation.mutate({
+      studentId: selectedStudentForCoin.id,
+      groupId: Number(id),
+      amount: coinAmount,
+      reason: coinReason || 'Yaxshi ishlagan uchun'
+    });
+  };
 
   const handleAddStudent = (e) => {
       e.preventDefault();
@@ -107,10 +198,13 @@ const GroupDetails = () => {
       addStudentMutation.mutate({ groupId: id, studentId: selectedStudentId });
   };
 
-  const handleRemoveStudent = (studentId) => {
-      if (window.confirm("Haqiqatan ham bu o'quvchini guruhdan olib tashlamoqchimisiz?")) {
-          removeStudentMutation.mutate({ groupId: id, studentId });
-      }
+  const handleRemoveStudent = (studentId, studentName) => {
+    setRemoveConfirm({ open: true, studentId, studentName: studentName || 'Nomsiz' });
+  };
+
+  const confirmRemoveStudent = () => {
+    removeStudentMutation.mutate({ groupId: id, studentId: removeConfirm.studentId });
+    setRemoveConfirm({ open: false, studentId: null, studentName: '' });
   };
 
   const handleAttendanceSubmit = async () => {
@@ -180,7 +274,9 @@ const GroupDetails = () => {
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6">
         <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
             <div className="flex-1">
-                <h1 className="text-3xl font-bold text-gray-900 mb-2">{group.name}</h1>
+                <h1 className="text-3xl font-bold text-gray-900 mb-2">
+                    {group.name} {isTeacher && <span className="text-sm font-normal text-gray-500 ml-2">(ID: {id})</span>}
+                </h1>
                 <p className="text-gray-600 mb-4">{group.description}</p>
                 <div className="flex flex-wrap gap-4 text-sm text-gray-600">
                     <div className="flex items-center gap-2">
@@ -196,6 +292,57 @@ const GroupDetails = () => {
         </div>
       </div>
 
+      {isStudent ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* My Payments */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                    <span>💳</span> Mening To'lovlarim
+                </h2>
+                {groupPayments.length > 0 ? (
+                    <div className="space-y-3">
+                        {groupPayments.map(payment => (
+                            <div key={payment.id} className="p-3 bg-gray-50 rounded-lg flex justify-between items-center">
+                                <div>
+                                    <p className="font-semibold text-gray-900">{payment.amount.toLocaleString()} UZS</p>
+                                    <p className="text-xs text-gray-500">{new Date(payment.paymentDate).toLocaleDateString()}</p>
+                                </div>
+                                <span className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded-full font-medium">
+                                    {payment.method}
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <p className="text-gray-500 text-sm">To'lovlar mavjud emas</p>
+                )}
+            </div>
+
+            {/* My Coins */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                    <span>🪙</span> Mening Coinlarim
+                </h2>
+                {groupCoins.length > 0 ? (
+                    <div className="space-y-3">
+                        {groupCoins.map(coin => (
+                            <div key={coin.id} className="p-3 bg-amber-50 rounded-lg flex justify-between items-center border border-amber-100">
+                                <div>
+                                    <p className="font-bold text-amber-700">+{coin.amount} Coin</p>
+                                    <p className="text-xs text-amber-600/80">{coin.reason}</p>
+                                </div>
+                                <span className="text-xs text-amber-600/60 font-medium">
+                                    {new Date(coin.awardedDate).toLocaleDateString()}
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <p className="text-gray-500 text-sm">Coinlar mavjud emas</p>
+                )}
+            </div>
+        </div>
+      ) : (
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
             <h2 className="text-xl font-bold text-gray-900">Guruh o'quvchilari ({totalStudents})</h2>
@@ -251,6 +398,15 @@ const GroupDetails = () => {
                                 </td>
                                 <td className="px-4 md:px-6 py-4 text-sm">
                                     <div className="flex items-center justify-end md:justify-start gap-2">
+                                        {isTeacher && (
+                                            <button
+                                                onClick={() => handleOpenCoinModal(student)}
+                                                className="cursor-pointer text-amber-600 hover:text-amber-700 bg-amber-50 hover:bg-amber-100 p-2 rounded-lg transition-colors"
+                                                title="Coin berish"
+                                            >
+                                                <FiAward size={20} />
+                                            </button>
+                                        )}
                                         <button
                                             onClick={() => handleSendAbsentSms(student)}
                                             className="cursor-pointer text-yellow-600 hover:text-yellow-700 bg-yellow-50 hover:bg-yellow-100 p-2 rounded-lg transition-colors"
@@ -259,8 +415,9 @@ const GroupDetails = () => {
                                             <FiMessageSquare size={20} />
                                         </button>
                                         {isAdmin && (
+
                                             <button
-                                                onClick={() => handleRemoveStudent(student.id)}
+                                                onClick={() => handleRemoveStudent(student.id, student.fullName)}
                                                 className="cursor-pointer text-red-500 hover:text-red-700 hover:bg-red-50 p-2 rounded-lg transition-colors hidden md:block"
                                                 title="Guruhdan o'chirish"
                                             >
@@ -276,6 +433,7 @@ const GroupDetails = () => {
             </table>
         </div>
       </div>
+      )}
 
       <Modal
         isOpen={isAttendanceModalOpen}
@@ -405,6 +563,127 @@ const GroupDetails = () => {
             </div>
           </form>
       </Modal>
+
+      {/* Coin Modal */}
+      <Modal
+        isOpen={isCoinModalOpen}
+        onClose={() => setIsCoinModalOpen(false)}
+        title={`${selectedStudentForCoin?.fullName} ga Coin berish`}
+      >
+        <form onSubmit={handleAwardCoins} className="space-y-4">
+          <div className="flex items-center justify-center gap-4 py-4">
+            <div className="text-6xl">🪙</div>
+            <div className="text-center">
+              <p className="text-3xl font-bold text-amber-600">{coinAmount}</p>
+              <p className="text-gray-500">Coin</p>
+            </div>
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Miqdori</label>
+            <div className="flex gap-2 flex-wrap">
+              {[5, 10, 15, 20, 25, 50].map(amount => (
+                <button
+                  key={amount}
+                  type="button"
+                  onClick={() => setCoinAmount(amount)}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors cursor-pointer ${
+                    coinAmount === amount 
+                      ? 'bg-amber-500 text-white' 
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  {amount}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Sabab (ixtiyoriy)</label>
+            <input
+              type="text"
+              value={coinReason}
+              onChange={(e) => setCoinReason(e.target.value)}
+              placeholder="Masalan: Faol qatnashgan"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none"
+            />
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4">
+            <button
+              type="button"
+              onClick={() => setIsCoinModalOpen(false)}
+              className="cursor-pointer px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+            >
+              Bekor qilish
+            </button>
+            <button
+              type="submit"
+              disabled={awardCoinsMutation.isPending}
+              className="cursor-pointer px-6 py-2 text-white bg-amber-500 hover:bg-amber-600 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
+            >
+              <FiAward />
+              {awardCoinsMutation.isPending ? 'Yuklanmoqda...' : 'Berish'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Leaderboard Section - Only for Teachers */}
+      {isTeacher && leaderboard.length > 0 && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mt-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center">
+              <FiStar className="text-white" size={20} />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">🏆 Coin Reytingi</h2>
+              <p className="text-sm text-gray-500">Eng ko'p coin to'plagan o'quvchilar</p>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            {leaderboard.slice(0, 10).map((entry, index) => (
+              <div 
+                key={entry.studentId} 
+                className={`flex items-center justify-between p-3 rounded-lg ${
+                  index === 0 ? 'bg-amber-50 border border-amber-200' :
+                  index === 1 ? 'bg-gray-50 border border-gray-200' :
+                  index === 2 ? 'bg-orange-50 border border-orange-200' :
+                  'bg-gray-50'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <span className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
+                    index === 0 ? 'bg-amber-500 text-white' :
+                    index === 1 ? 'bg-gray-400 text-white' :
+                    index === 2 ? 'bg-orange-400 text-white' :
+                    'bg-gray-200 text-gray-600'
+                  }`}>
+                    {index + 1}
+                  </span>
+                  <span className="font-medium text-gray-900">{entry.studentName}</span>
+                </div>
+                <div className="flex items-center gap-1 text-amber-600 font-bold">
+                  🪙 {entry.totalCoins || 0}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      <ConfirmDialog
+        isOpen={removeConfirm.open}
+        title="O'quvchini guruhdan olib tashlash"
+        message={`"${removeConfirm.studentName}" o'quvchisini guruhdan olib tashlamoqchimisiz?`}
+        confirmText="Ha, olib tashlash"
+        cancelText="Bekor qilish"
+        variant="warning"
+        onConfirm={confirmRemoveStudent}
+        onCancel={() => setRemoveConfirm({ open: false, studentId: null, studentName: '' })}
+        loading={removeStudentMutation.isPending}
+      />
     </div>
   );
 };

@@ -6,9 +6,13 @@ import { FiSearch, FiPlus, FiEdit2, FiTrash2, FiUser, FiPhone, FiMail, FiGrid, F
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import Modal from '../components/common/Modal';
+import ConfirmDialog from '../components/common/ConfirmDialog';
+import { parseDeleteError } from '../utils/errorParser';
+import { useAuth } from '../hooks/useAuth';
 
 const Teachers = () => {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
 
   // Modal State
@@ -16,6 +20,7 @@ const Teachers = () => {
   const [editingTeacher, setEditingTeacher] = useState(null);
   const [formError, setFormError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState({ open: false, teacherId: null, teacherName: '' });
 
   // Initial Form State
   const initialFormState = {
@@ -26,6 +31,9 @@ const Teachers = () => {
   };
 
   const [formData, setFormData] = useState(initialFormState);
+
+  // Check if user is ADMIN
+  const isAdmin = user?.role === 'ADMIN';
 
   // Fetch Teachers
   const { data: teachers = [], isLoading: loading } = useQuery({
@@ -40,7 +48,8 @@ const Teachers = () => {
   const { data: allGroups = [] } = useQuery({
     queryKey: ['groups'],
     queryFn: async () => {
-      const res = await groupsApi.getAll();
+      // Use Admin endpoint to ensure we get ALL groups across all teachers
+      const res = await groupsApi.getAdminGroups();
       return res.data;
     },
   });
@@ -74,7 +83,7 @@ const Teachers = () => {
       return teachersApi.create(createData);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries(['teachers']);
+      queryClient.invalidateQueries({ queryKey: ['teachers'] });
       setIsModalOpen(false);
       toast.success("O'qituvchi muvaffaqiyatli qo'shildi");
     },
@@ -86,16 +95,20 @@ const Teachers = () => {
   });
 
   // Update Mutation
+  // Backend UpdateUserRequest: { fullName, phone, email, password, role, active }
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }) => {
       const updateData = {
         fullName: data.fullName,
-        phone: data.phone
+        phone: data.phone,
+        email: data.email,
+        // Only include password if it was changed (not empty)
+        ...(data.password && { password: data.password })
       };
       return teachersApi.update(id, updateData);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries(['teachers']);
+      queryClient.invalidateQueries({ queryKey: ['teachers'] });
       setIsModalOpen(false);
       toast.success("O'qituvchi muvaffaqiyatli yangilandi");
     },
@@ -110,11 +123,14 @@ const Teachers = () => {
   const deleteMutation = useMutation({
     mutationFn: (id) => teachersApi.delete(id),
     onSuccess: () => {
-      queryClient.invalidateQueries(['teachers']);
+      queryClient.invalidateQueries({ queryKey: ['teachers'] });
       toast.success("O'qituvchi muvaffaqiyatli o'chirildi");
     },
     onError: (error) => {
-      toast.error(error.response?.data?.message || 'Xatolik yuz berdi');
+      console.error('Delete teacher error:', error);
+      const msg = parseDeleteError(error, "O'qituvchi");
+      toast.error(msg, { duration: 7000 });
+      alert(msg);
     }
   });
 
@@ -128,6 +144,7 @@ const Teachers = () => {
         email: teacher.email,
         password: '',
         phone: teacher.phone || '+998',
+        phone: teacher.phone || '+998'
       });
     } else {
       setEditingTeacher(null);
@@ -151,17 +168,20 @@ const Teachers = () => {
     }
   };
 
-  const handleDelete = async (teacher) => {
+  const handleDelete = (teacher) => {
     const teacherGroupsCount = allGroups.filter(g => g.teacherName === teacher.fullName).length;
     
     if (teacherGroupsCount > 0) {
-        alert(`Diqqat! Bu o'qituvchiga ${teacherGroupsCount} ta guruh biriktirilgan. Avval guruhlarni boshqa o'qituvchiga o'tkazing yoki o'chiring.`);
-        return;
+      toast.error(`Bu o'qituvchiga ${teacherGroupsCount} ta guruh biriktirilgan. Avval guruhlarni boshqa o'qituvchiga o'tkazing.`);
+      return;
     }
 
-    if (window.confirm('Haqiqatan ham bu o\'qituvchini o\'chirmoqchimisiz?')) {
-      deleteMutation.mutate(teacher.id);
-    }
+    setDeleteConfirm({ open: true, teacherId: teacher.id, teacherName: teacher.fullName });
+  };
+
+  const confirmDeleteTeacher = () => {
+    deleteMutation.mutate(deleteConfirm.teacherId);
+    setDeleteConfirm({ open: false, teacherId: null, teacherName: '' });
   };
 
   const filteredTeachers = teachers.filter(teacher =>
@@ -176,13 +196,15 @@ const Teachers = () => {
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">O'qituvchilar</h1>
           <p className="text-gray-600 mt-1">O'qituvchilar ro'yxati va boshqaruvi</p>
         </div>
-        <button
-          onClick={() => handleOpenModal()}
-          className="cursor-pointer w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 transition-all shadow-md hover:shadow-lg"
-        >
-          <FiPlus className="h-5 w-5" />
-          Yangi O'qituvchi
-        </button>
+        {isAdmin && (
+          <button
+            onClick={() => handleOpenModal()}
+            className="cursor-pointer w-full sm:w-auto flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 transition-all shadow-md hover:shadow-lg"
+          >
+            <FiPlus className="h-5 w-5" />
+            Yangi O'qituvchi
+          </button>
+        )}
       </div>
 
       <div className="bg-white rounded-xl shadow-md p-4 sm:p-6 mb-6">
@@ -217,9 +239,6 @@ const Teachers = () => {
                                   <FiMail className="text-gray-400" /> {teacher.email}
                                 </p>
                              </div>
-                             <span className={`px-2 py-1 text-xs font-semibold rounded-full ${teacher.active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                                {teacher.active ? 'Aktiv' : 'Nofaol'}
-                             </span>
                         </div>
                         <div className="grid grid-cols-2 gap-2 my-3 text-sm">
                             <div className="flex items-center gap-2 text-gray-600">
@@ -237,18 +256,22 @@ const Teachers = () => {
                               >
                                 <FiEye className="h-5 w-5" />
                               </Link>
-                              <button
-                                onClick={() => handleOpenModal(teacher)}
-                                className="p-2 text-green-600 bg-green-50 rounded-lg hover:bg-green-100"
-                              >
-                                <FiEdit2 className="h-5 w-5" />
-                              </button>
-                              <button
-                                onClick={() => handleDelete(teacher)}
-                                className="p-2 text-red-600 bg-red-50 rounded-lg hover:bg-red-100"
-                              >
-                                <FiTrash2 className="h-5 w-5" />
-                              </button>
+                              {isAdmin && (
+                                <>
+                                  <button
+                                    onClick={() => handleOpenModal(teacher)}
+                                    className="p-2 text-green-600 bg-green-50 rounded-lg hover:bg-green-100"
+                                  >
+                                    <FiEdit2 className="h-5 w-5" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDelete(teacher)}
+                                    className="p-2 text-red-600 bg-red-50 rounded-lg hover:bg-red-100"
+                                  >
+                                    <FiTrash2 className="h-5 w-5" />
+                                  </button>
+                                </>
+                              )}
                         </div>
                     </div>
                 )})
@@ -267,7 +290,9 @@ const Teachers = () => {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Login (Email)</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Telefon</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Guruhlar</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+
+
+
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Amallar</th>
               </tr>
             </thead>
@@ -288,22 +313,24 @@ const Teachers = () => {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-bold">{groupCount}</span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${teacher.active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                        {teacher.active ? 'Aktiv' : 'Nofaol'}
-                      </span>
-                    </td>
+
+
+
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <div className="flex justify-end gap-2">
                         <Link to={`/teachers/${teacher.id}`} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
                           <FiEye className="h-4 w-4" />
                         </Link>
-                        <button onClick={() => handleOpenModal(teacher)} className="cursor-pointer p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors">
-                          <FiEdit2 className="h-4 w-4" />
-                        </button>
-                        <button onClick={() => handleDelete(teacher)} className="cursor-pointer p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors">
-                          <FiTrash2 className="h-4 w-4" />
-                        </button>
+                        {isAdmin && (
+                          <>
+                            <button onClick={() => handleOpenModal(teacher)} className="cursor-pointer p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors">
+                              <FiEdit2 className="h-4 w-4" />
+                            </button>
+                            <button onClick={() => handleDelete(teacher)} className="cursor-pointer p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                              <FiTrash2 className="h-4 w-4" />
+                            </button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -348,37 +375,42 @@ const Teachers = () => {
             <input
               type="text"
               required
-              disabled={!!editingTeacher}
-              className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all ${!!editingTeacher ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''}`}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all"
               value={formData.email}
               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
               placeholder="teacher123"
             />
+            {editingTeacher && (
+              <p className="text-xs text-gray-500 mt-1">Login o'zgartirilsa, yangi login bilan kirish kerak bo'ladi</p>
+            )}
           </div>
 
-          {!editingTeacher && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Parol</label>
-              <div className="relative">
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all pr-10"
-                  value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  placeholder="******"
-                  minLength={6}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="cursor-pointer absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
-                >
-                  {showPassword ? <FiEyeOff className="h-5 w-5" /> : <FiEye className="h-5 w-5" />}
-                </button>
-              </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              {editingTeacher ? 'Yangi Parol (ixtiyoriy)' : 'Parol'}
+            </label>
+            <div className="relative">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                required={!editingTeacher}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all pr-10"
+                value={formData.password}
+                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                placeholder={editingTeacher ? 'Bo\'sh qoldiring agar o\'zgartirmoqchi bo\'lmasangiz' : '******'}
+                minLength={editingTeacher ? 0 : 6}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="cursor-pointer absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+              >
+                {showPassword ? <FiEyeOff className="h-5 w-5" /> : <FiEye className="h-5 w-5" />}
+              </button>
             </div>
-          )}
+            {editingTeacher && (
+              <p className="text-xs text-gray-500 mt-1">Parolni o'zgartirish uchun yangi parol kiriting. Bo'sh qoldiring agar saqlamoqchi bo'lsangiz.</p>
+            )}
+          </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Telefon raqam</label>
@@ -391,8 +423,10 @@ const Teachers = () => {
             />
           </div>
 
-          <div className="flex justify-end gap-3 mt-6">
-            <button
+
+
+            <div className="flex justify-end gap-3 mt-6">
+              <button
               type="button"
               onClick={() => setIsModalOpen(false)}
               className="cursor-pointer px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
@@ -409,6 +443,18 @@ const Teachers = () => {
           </div>
         </form>
       </Modal>
+
+      <ConfirmDialog
+        isOpen={deleteConfirm.open}
+        title="O'qituvchini o'chirish"
+        message={`"${deleteConfirm.teacherName}" o'qituvchisini o'chirmoqchimisiz? Bu amalni ortga qaytarib bo'lmaydi.`}
+        confirmText="Ha, o'chirish"
+        cancelText="Bekor qilish"
+        variant="danger"
+        onConfirm={confirmDeleteTeacher}
+        onCancel={() => setDeleteConfirm({ open: false, teacherId: null, teacherName: '' })}
+        loading={deleteMutation.isPending}
+      />
     </div>
   );
 };

@@ -65,7 +65,8 @@ export const AuthProvider = ({ children }) => {
         userId: data.userId,
         email: data.email,
         fullName: data.fullName,
-        role: data.role
+        role: data.role,
+        phone: data.phone || ''
       };
       
       // Save to localStorage

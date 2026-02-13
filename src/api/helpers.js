@@ -1,30 +1,14 @@
-export const getUserBranchId = () => {
-    try {
-        const userStr = localStorage.getItem('user');
-        if (!userStr) return null;
-
-        const user = JSON.parse(userStr);
-        // Handle both camelCase and snake_case depending on API response format
-        return user.branchId || user.branch_id || user.branchID;
-    } catch (error) {
-        console.error('Error getting branch ID:', error);
-        return null;
-    }
-};
+/**
+ * Helper functions - Backend bilan 100% mos
+ */
 
 export const formatCurrency = (amount) => {
     if (amount === undefined || amount === null) return '0 UZS';
 
-    // Ensure amount is a number and handle potential floating point issues by rounding if needed,
-    // but typically for currency we want to show exact unless it's just display formatting.
-    // The requirement "Fix price formatting bugs... If price is 400,000 It MUST NOT show 399,000"
-    // suggests a floating point error (e.g. 399999.99999999994).
-    // We should round to nearest integer for UZS usually.
-
     const number = Number(amount);
     if (isNaN(number)) return '0 UZS';
 
-    // Round to avoid 399,999.99999 issue if it's supposed to be 400,000
+    // Round to avoid floating point errors
     const rounded = Math.round(number);
 
     return new Intl.NumberFormat('uz-UZ', {
@@ -55,4 +39,34 @@ export const formatDateTime = (dateString) => {
         hour: '2-digit',
         minute: '2-digit'
     }).format(date);
+};
+
+/**
+ * Get current user from localStorage
+ */
+export const getCurrentUser = () => {
+    try {
+        const userStr = localStorage.getItem('user');
+        if (!userStr) return null;
+        return JSON.parse(userStr);
+    } catch (error) {
+        console.error('Error getting current user:', error);
+        return null;
+    }
+};
+
+/**
+ * Get current user's role
+ */
+export const getUserRole = () => {
+    const user = getCurrentUser();
+    return user?.role || null;
+};
+
+/**
+ * Get current user's ID
+ */
+export const getUserId = () => {
+    const user = getCurrentUser();
+    return user?.userId || null;
 };

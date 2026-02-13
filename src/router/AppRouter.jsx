@@ -10,13 +10,18 @@ import TeacherDetails from '../pages/TeacherDetails';
 import Groups from '../pages/Groups';
 import GroupDetails from '../pages/groups/GroupDetails';
 import Payments from '../pages/Payments';
-import Expenses from '../pages/Expenses';
-import Salary from '../pages/Salary';
-import Reports from '../pages/Reports';
 import NotFound from '../pages/NotFound';
 import Users from '../pages/Users';
-import UserDetails from '../pages/UserDetails';
-import Branches from '../pages/Branches';
+import OrphanedStudents from '../pages/students/OrphanedStudents';
+
+/**
+ * App Router - Backend bilan 100% mos
+ * 
+ * Backend UserRole: ADMIN | TEACHER | STUDENT
+ * 
+ * Note: SUPER_ADMIN backendda yo'q, shuning uchun olib tashlandi.
+ * Note: Branches, Expenses, Salary, Reports sahifalari backendda yo'q.
+ */
 
 const PrivateRoute = () => {
   const { isAuthenticated, loading } = useAuth();
@@ -51,29 +56,11 @@ const RoleProtectedRoute = ({ element, allowedRoles }) => {
     return element;
   }
   
-  if (user?.role === 'SUPER_ADMIN') {
-    return (
-      <div className="flex flex-col items-center justify-center h-screen bg-gray-50">
-        <div className="text-center">
-          <div className="text-6xl mb-4">🔒</div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Ruxsat yo'q</h1>
-          <p className="text-gray-600 mb-6">Sizga bu sahifaga kirish ruxsati yo'q</p>
-          <a 
-            href="/users" 
-            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            Foydalanuvchilar bo'limiga qaytish
-          </a>
-        </div>
-      </div>
-    );
-  }
-  
   return <Navigate to="/dashboard" replace />;
 };
 
 const RootRedirect = () => {
-  const { user, loading } = useAuth();
+  const { loading } = useAuth();
   
   if (loading) {
     return (
@@ -81,10 +68,6 @@ const RootRedirect = () => {
         <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
       </div>
     );
-  }
-  
-  if (user?.role === 'SUPER_ADMIN') {
-    return <Navigate to="/users" replace />;
   }
   
   return <Navigate to="/dashboard" replace />;
@@ -109,7 +92,11 @@ const router = createBrowserRouter([
       },
       {
         path: 'students',
-        element: <RoleProtectedRoute element={<Students />} allowedRoles={['ADMIN']} />,
+        element: <RoleProtectedRoute element={<Students />} allowedRoles={['ADMIN', 'TEACHER']} />,
+      },
+      {
+        path: 'students/orphaned',
+        element: <RoleProtectedRoute element={<OrphanedStudents />} allowedRoles={['ADMIN']} />,
       },
       {
         path: 'students/:id',
@@ -133,31 +120,11 @@ const router = createBrowserRouter([
       },
       {
         path: 'payments',
-        element: <RoleProtectedRoute element={<Payments />} allowedRoles={['ADMIN']} />,
-      },
-      {
-        path: 'expenses',
-        element: <RoleProtectedRoute element={<Expenses />} allowedRoles={['ADMIN']} />,
-      },
-      {
-        path: 'salary',
-        element: <RoleProtectedRoute element={<Salary />} allowedRoles={['ADMIN']} />,
-      },
-      {
-        path: 'reports',
-        element: <RoleProtectedRoute element={<Reports />} allowedRoles={['ADMIN', 'SUPER_ADMIN']} />,
+        element: <RoleProtectedRoute element={<Payments />} allowedRoles={['ADMIN', 'TEACHER', 'STUDENT']} />,
       },
       {
         path: 'users',
-        element: <RoleProtectedRoute element={<Users />} allowedRoles={['SUPER_ADMIN']} />,
-      },
-      {
-        path: 'users/:id',
-        element: <RoleProtectedRoute element={<UserDetails />} allowedRoles={['SUPER_ADMIN']} />,
-      },
-      {
-        path: 'branches',
-        element: <RoleProtectedRoute element={<Branches />} allowedRoles={['SUPER_ADMIN']} />,
+        element: <RoleProtectedRoute element={<Users />} allowedRoles={['ADMIN']} />,
       },
       {
         path: '*',
