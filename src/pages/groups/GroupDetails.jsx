@@ -367,37 +367,95 @@ const GroupDetails = () => {
             </div>
         </div>
 
-        <div className="overflow-x-auto">
+        {/* Mobile View - Cards */}
+        <div className="block md:hidden space-y-4">
+            {groupStudents.length === 0 ? (
+                <div className="text-center py-8 text-gray-500 bg-gray-50 rounded-lg border border-dashed border-gray-200">
+                    Guruhda o'quvchilar yo'q
+                </div>
+            ) : (
+                groupStudents.map((student) => (
+                    <div key={student.id} className="bg-gray-50 rounded-xl p-4 border border-gray-100 shadow-sm">
+                        <div className="flex justify-between items-start mb-3">
+                            <div>
+                                <Link to={`/students/${student.id}`} className="font-bold text-gray-900 hover:text-blue-600 block mb-1">
+                                    {student.fullName}
+                                </Link>
+                                <div className="text-sm text-gray-500 space-y-1">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-gray-400">📞</span> {student.phone || '-'}
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-gray-400">✉️</span> {student.email || '-'}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div className="flex justify-end gap-2 pt-3 border-t border-gray-200">
+                            {isTeacher && (
+                                <button
+                                    onClick={() => handleOpenCoinModal(student)}
+                                    className="cursor-pointer text-amber-600 hover:bg-amber-100 p-2 rounded-lg bg-white border border-gray-200 shadow-sm"
+                                    title="Coin berish"
+                                >
+                                    <FiAward size={18} />
+                                </button>
+                            )}
+                            <button
+                                onClick={() => handleSendAbsentSms(student)}
+                                className="cursor-pointer text-yellow-600 hover:bg-yellow-100 p-2 rounded-lg bg-white border border-gray-200 shadow-sm"
+                                title="SMS"
+                            >
+                                <FiMessageSquare size={18} />
+                            </button>
+                            {isAdmin && (
+                                <button
+                                    onClick={() => handleRemoveStudent(student.id, student.fullName)}
+                                    className="cursor-pointer text-red-500 hover:bg-red-50 p-2 rounded-lg bg-white border border-gray-200 shadow-sm"
+                                    title="Guruhdan o'chirish"
+                                >
+                                    <FiTrash2 size={18} />
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                ))
+            )}
+        </div>
+
+        {/* Desktop View - Table */}
+        <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left">
                 <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
-                        <th className="px-4 md:px-6 py-3 text-xs font-semibold text-gray-500 uppercase">F.I.SH</th>
-                        <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase hidden md:table-cell">Telefon</th>
-                        <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase hidden md:table-cell">Email</th>
-                        <th className="px-4 md:px-6 py-3 text-xs font-semibold text-gray-500 uppercase text-right md:text-left">Amallar</th>
+                        <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">F.I.SH</th>
+                        <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Telefon</th>
+                        <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Email</th>
+                        <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase text-right">Amallar</th>
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
                     {groupStudents.length === 0 ? (
                         <tr>
-                            <td colSpan="4" className="px-4 md:px-6 py-4 text-center text-gray-500">Guruhda o'quvchilar yo'q</td>
+                            <td colSpan="4" className="px-6 py-8 text-center text-gray-500">Guruhda o'quvchilar yo'q</td>
                         </tr>
                     ) : (
                         groupStudents.map((student) => (
                             <tr key={student.id} className="hover:bg-gray-50">
-                                <td className="px-4 md:px-6 py-4 text-sm font-medium text-gray-900">
+                                <td className="px-6 py-4 text-sm font-medium text-gray-900">
                                     <Link to={`/students/${student.id}`} className="hover:text-blue-600 hover:underline">
                                         {student.fullName}
                                     </Link>
                                 </td>
-                                <td className="px-6 py-4 text-sm text-gray-500 hidden md:table-cell">
+                                <td className="px-6 py-4 text-sm text-gray-500">
                                     {student.phone || '-'}
                                 </td>
-                                <td className="px-6 py-4 text-sm text-gray-500 hidden md:table-cell">
+                                <td className="px-6 py-4 text-sm text-gray-500">
                                     {student.email || '-'}
                                 </td>
-                                <td className="px-4 md:px-6 py-4 text-sm">
-                                    <div className="flex items-center justify-end md:justify-start gap-2">
+                                <td className="px-6 py-4 text-sm text-right">
+                                    <div className="flex items-center justify-end gap-2">
                                         {isTeacher && (
                                             <button
                                                 onClick={() => handleOpenCoinModal(student)}
@@ -415,10 +473,9 @@ const GroupDetails = () => {
                                             <FiMessageSquare size={20} />
                                         </button>
                                         {isAdmin && (
-
                                             <button
                                                 onClick={() => handleRemoveStudent(student.id, student.fullName)}
-                                                className="cursor-pointer text-red-500 hover:text-red-700 hover:bg-red-50 p-2 rounded-lg transition-colors hidden md:block"
+                                                className="cursor-pointer text-red-500 hover:text-red-700 hover:bg-red-50 p-2 rounded-lg transition-colors"
                                                 title="Guruhdan o'chirish"
                                             >
                                                 <FiTrash2 />
