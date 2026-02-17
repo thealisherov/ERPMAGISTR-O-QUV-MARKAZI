@@ -5,6 +5,7 @@ import { groupsApi } from '../../api/groups.api';
 import { studentsApi } from '../../api/students.api';
 import { teachersApi } from '../../api/teachers.api';
 import { attendanceApi } from '../../api/attendance.api';
+import { coinsApi } from '../../api/coins.api';
 import { useAuth } from '../../hooks/useAuth';
 import {
   FiUsers,
@@ -89,10 +90,17 @@ const GroupDetails = () => {
   const { data: leaderboard = [] } = useQuery({
     queryKey: ['leaderboard', id],
     queryFn: async () => {
-      const res = await teachersApi.getGroupLeaderboard(id);
-      return res.data;
+      try {
+        const res = await coinsApi.getGroupLeaderboard(id);
+        return res.data;
+      } catch (error) {
+        // If forbidden or error, return empty list to avoid UI issues
+        console.warn("Leaderboard fetching failed:", error);
+        return [];
+      }
     },
-    enabled: !!id && isTeacher
+    enabled: !!id,
+    retry: false
   });
 
   // Fetch All Students (for adding)
@@ -159,7 +167,7 @@ const GroupDetails = () => {
 
   // Award coins mutation
   const awardCoinsMutation = useMutation({
-    mutationFn: (data) => teachersApi.awardCoins(data),
+    mutationFn: (data) => coinsApi.award(data),
     onSuccess: () => {
       queryClient.invalidateQueries(['leaderboard', id]);
       setIsCoinModalOpen(false);
@@ -245,10 +253,12 @@ const GroupDetails = () => {
           toast.error("Telefon raqam topilmadi");
           return;
       }
+
       const cleanPhone = phone.replace(/\s/g, '');
       const message = `Assalomu alaykum. ${student.fullName} bugun darsga qatnashmadi.`;
       const encodedMessage = encodeURIComponent(message);
-      window.location.assign(`sms:${cleanPhone}?body=${encodedMessage}`);
+      
+      window.location.href = `sms:${cleanPhone}?body=${encodedMessage}`;
   };
 
   if (groupLoading) {
@@ -291,6 +301,84 @@ const GroupDetails = () => {
             </div>
         </div>
       </div>
+
+      {/* Leaderboard Section - Common for both if available */}
+      {leaderboard.length > 0 && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6 relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-amber-300 via-yellow-500 to-amber-600"></div>
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-100 to-amber-200 flex items-center justify-center shadow-inner">
+                <FiStar className="text-amber-600 drop-shadow-sm" size={24} />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">Guruh Reytingi</h2>
+                <p className="text-sm text-gray-500">Eng faol o'quvchilar ro'yxati</p>
+              </div>
+            </div>
+            
+            {/* Top 3 Avatars Mini View (Optional - mostly for visuals) */}
+            <div className="flex -space-x-2 overflow-hidden">
+                {leaderboard.slice(0, 3).map((entry, i) => (
+                    <div key={i} className={`w-8 h-8 rounded-full border-2 border-white flex items-center justify-center text-xs font-bold text-white shadow-sm ${
+                        i === 0 ? 'bg-amber-500 z-30' : i === 1 ? 'bg-gray-400 z-20' : 'bg-orange-400 z-10'
+                    }`} title={entry.studentName}>
+                        {i + 1}
+                    </div>
+                ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {leaderboard.slice(0, 3).map((entry, index) => (
+              <div 
+                key={entry.studentId} 
+                className={`relative p-4 rounded-xl border transition-all hover:shadow-md ${
+                  index === 0 ? 'bg-gradient-to-br from-amber-50 to-amber-100/50 border-amber-200' :
+                  index === 1 ? 'bg-gradient-to-br from-gray-50 to-gray-100/50 border-gray-200' :
+                  'bg-gradient-to-br from-orange-50 to-orange-100/50 border-orange-200'
+                }`}
+              >
+                 <div className="absolute -top-3 -right-3 w-8 h-8 rounded-full flex items-center justify-center font-bold text-white shadow-sm bg-gradient-to-r"
+                      style={{ 
+                          background: index === 0 ? 'linear-gradient(45deg, #f59e0b, #fbbf24)' : 
+                                      index === 1 ? 'linear-gradient(45deg, #9ca3af, #d1d5db)' : 
+                                      'linear-gradient(45deg, #d97706, #f59e0b)'
+                       }}
+                 >
+                    {index + 1}
+                 </div>
+                 <h3 className="font-bold text-gray-900 text-lg truncate pr-4">{entry.studentName}</h3>
+                 <div className="flex items-center gap-2 mt-2">
+                    <span className="text-2xl">🪙</span>
+                    <span className="text-2xl font-bold text-gray-800">{entry.totalCoins}</span>
+                 </div>
+                 {index === 0 && <span className="absolute bottom-2 right-2 text-4xl opacity-10">👑</span>}
+              </div>
+            ))}
+          </div>
+          
+          {leaderboard.length > 3 && (
+              <div className="mt-4 pt-4 border-t border-gray-100">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-y-2 gap-x-6">
+                      {leaderboard.slice(3, 10).map((entry, index) => (
+                          <div key={entry.studentId} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded-lg transition-colors group">
+                                <div className="flex items-center gap-3">
+                                    <span className="w-6 h-6 rounded flex items-center justify-center bg-gray-100 text-gray-500 font-bold text-xs group-hover:bg-blue-50 group-hover:text-blue-600 transition-colors">
+                                        {index + 4}
+                                    </span>
+                                    <span className="font-medium text-gray-700 truncate max-w-[150px]">{entry.studentName}</span>
+                                </div>
+                                <span className="font-bold text-amber-600 text-sm">
+                                    {entry.totalCoins} 🪙
+                                </span>
+                          </div>
+                      ))}
+                  </div>
+              </div>
+          )}
+        </div>
+      )}
 
       {isStudent ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -687,49 +775,7 @@ const GroupDetails = () => {
         </form>
       </Modal>
 
-      {/* Leaderboard Section - Only for Teachers */}
-      {isTeacher && leaderboard.length > 0 && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mt-6">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center">
-              <FiStar className="text-white" size={20} />
-            </div>
-            <div>
-              <h2 className="text-lg font-bold text-gray-900">🏆 Coin Reytingi</h2>
-              <p className="text-sm text-gray-500">Eng ko'p coin to'plagan o'quvchilar</p>
-            </div>
-          </div>
 
-          <div className="space-y-2">
-            {leaderboard.slice(0, 10).map((entry, index) => (
-              <div 
-                key={entry.studentId} 
-                className={`flex items-center justify-between p-3 rounded-lg ${
-                  index === 0 ? 'bg-amber-50 border border-amber-200' :
-                  index === 1 ? 'bg-gray-50 border border-gray-200' :
-                  index === 2 ? 'bg-orange-50 border border-orange-200' :
-                  'bg-gray-50'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <span className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
-                    index === 0 ? 'bg-amber-500 text-white' :
-                    index === 1 ? 'bg-gray-400 text-white' :
-                    index === 2 ? 'bg-orange-400 text-white' :
-                    'bg-gray-200 text-gray-600'
-                  }`}>
-                    {index + 1}
-                  </span>
-                  <span className="font-medium text-gray-900">{entry.studentName}</span>
-                </div>
-                <div className="flex items-center gap-1 text-amber-600 font-bold">
-                  🪙 {entry.totalCoins || 0}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
       <ConfirmDialog
         isOpen={removeConfirm.open}
         title="O'quvchini guruhdan olib tashlash"
