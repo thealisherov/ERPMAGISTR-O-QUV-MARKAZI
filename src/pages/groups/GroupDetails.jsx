@@ -38,6 +38,7 @@ const GroupDetails = () => {
   const [removeConfirm, setRemoveConfirm] = useState({ open: false, studentId: null, studentName: '' });
 
   const [isAttendanceModalOpen, setIsAttendanceModalOpen] = useState(false);
+  const [isLeaderboardModalOpen, setIsLeaderboardModalOpen] = useState(false);
   const [attendanceDate, setAttendanceDate] = useState(
     new Date().toISOString().split('T')[0]
   );
@@ -123,18 +124,17 @@ const GroupDetails = () => {
     enabled: isStudent
   });
 
-  // Fetch My Coins (Student only)
-  const { data: myCoins = [] } = useQuery({
-    queryKey: ['myCoins'],
+  // Fetch My Coins for this Group (Student only)
+  const { data: groupCoins = [] } = useQuery({
+    queryKey: ['myCoins', id],
     queryFn: async () => {
-      const res = await studentsApi.getMyCoins();
+      const res = await coinsApi.getMyCoinsByGroup(id);
       return res.data;
     },
-    enabled: isStudent
+    enabled: !!id && isStudent
   });
 
   const groupPayments = myPayments.filter(p => p.groupId === Number(id));
-  const groupCoins = myCoins.filter(c => c.groupId === Number(id));
 
   // Add student mutation
   const addStudentMutation = useMutation({
@@ -299,86 +299,82 @@ const GroupDetails = () => {
                     </div>
                 </div>
             </div>
+            {/* Action Buttons */}
+            <div className="flex flex-wrap gap-2 w-full md:w-auto mt-4 lg:mt-0">
+               {leaderboard.length > 0 && (
+                   <button
+                       onClick={() => setIsLeaderboardModalOpen(true)}
+                       className="flex-1 md:flex-none justify-center cursor-pointer flex items-center gap-2 bg-gradient-to-r from-amber-500 to-amber-600 text-white px-4 py-3 rounded-lg hover:from-amber-600 hover:to-amber-700 transition-all shadow-sm"
+                   >
+                       <FiStar /> Reyting
+                   </button>
+               )}
+            </div>
         </div>
       </div>
 
-      {/* Leaderboard Section - Common for both if available */}
-      {leaderboard.length > 0 && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-6 relative overflow-hidden">
+      {/* Coin Modal */}
+      <Modal
+         isOpen={isLeaderboardModalOpen}
+         onClose={() => setIsLeaderboardModalOpen(false)}
+         title="Guruh Reytingi"
+         maxWidth="max-w-md"
+      >
+        <div className="bg-white p-4 relative overflow-hidden">
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-amber-300 via-yellow-500 to-amber-600"></div>
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-100 to-amber-200 flex items-center justify-center shadow-inner">
-                <FiStar className="text-amber-600 drop-shadow-sm" size={24} />
-              </div>
-              <div>
-                <h2 className="text-xl font-bold text-gray-900">Guruh Reytingi</h2>
-                <p className="text-sm text-gray-500">Eng faol o'quvchilar ro'yxati</p>
-              </div>
-            </div>
-            
-            {/* Top 3 Avatars Mini View (Optional - mostly for visuals) */}
-            <div className="flex -space-x-2 overflow-hidden">
-                {leaderboard.slice(0, 3).map((entry, i) => (
-                    <div key={i} className={`w-8 h-8 rounded-full border-2 border-white flex items-center justify-center text-xs font-bold text-white shadow-sm ${
-                        i === 0 ? 'bg-amber-500 z-30' : i === 1 ? 'bg-gray-400 z-20' : 'bg-orange-400 z-10'
-                    }`} title={entry.studentName}>
-                        {i + 1}
-                    </div>
-                ))}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {leaderboard.slice(0, 3).map((entry, index) => (
-              <div 
-                key={entry.studentId} 
-                className={`relative p-4 rounded-xl border transition-all hover:shadow-md ${
-                  index === 0 ? 'bg-gradient-to-br from-amber-50 to-amber-100/50 border-amber-200' :
-                  index === 1 ? 'bg-gradient-to-br from-gray-50 to-gray-100/50 border-gray-200' :
-                  'bg-gradient-to-br from-orange-50 to-orange-100/50 border-orange-200'
-                }`}
-              >
-                 <div className="absolute -top-3 -right-3 w-8 h-8 rounded-full flex items-center justify-center font-bold text-white shadow-sm bg-gradient-to-r"
-                      style={{ 
-                          background: index === 0 ? 'linear-gradient(45deg, #f59e0b, #fbbf24)' : 
-                                      index === 1 ? 'linear-gradient(45deg, #9ca3af, #d1d5db)' : 
-                                      'linear-gradient(45deg, #d97706, #f59e0b)'
-                       }}
-                 >
-                    {index + 1}
-                 </div>
-                 <h3 className="font-bold text-gray-900 text-lg truncate pr-4">{entry.studentName}</h3>
-                 <div className="flex items-center gap-2 mt-2">
-                    <span className="text-2xl">🪙</span>
-                    <span className="text-2xl font-bold text-gray-800">{entry.totalCoins}</span>
-                 </div>
-                 {index === 0 && <span className="absolute bottom-2 right-2 text-4xl opacity-10">👑</span>}
-              </div>
-            ))}
-          </div>
+          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-amber-300 via-yellow-500 to-amber-600"></div>
           
-          {leaderboard.length > 3 && (
-              <div className="mt-4 pt-4 border-t border-gray-100">
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-y-2 gap-x-6">
-                      {leaderboard.slice(3, 10).map((entry, index) => (
-                          <div key={entry.studentId} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded-lg transition-colors group">
-                                <div className="flex items-center gap-3">
-                                    <span className="w-6 h-6 rounded flex items-center justify-center bg-gray-100 text-gray-500 font-bold text-xs group-hover:bg-blue-50 group-hover:text-blue-600 transition-colors">
-                                        {index + 4}
-                                    </span>
-                                    <span className="font-medium text-gray-700 truncate max-w-[150px]">{entry.studentName}</span>
-                                </div>
-                                <span className="font-bold text-amber-600 text-sm">
-                                    {entry.totalCoins} 🪙
-                                </span>
-                          </div>
-                      ))}
-                  </div>
-              </div>
-          )}
+            {/* Leaderboard List - Unified View */}
+            
+            {/* Leaderboard List - Unified View */}
+            <div className="flex flex-col gap-3">
+              {leaderboard.map((entry, index) => (
+                <div 
+                  key={entry.studentId} 
+                  className={`flex items-center justify-between p-3 rounded-lg border transition-all ${
+                    index === 0 ? 'bg-gradient-to-r from-amber-50 to-white border-amber-200 shadow-sm' :
+                    index === 1 ? 'bg-gradient-to-r from-gray-50 to-white border-gray-200 shadow-sm' :
+                    index === 2 ? 'bg-gradient-to-r from-orange-50 to-white border-orange-200 shadow-sm' :
+                    'bg-white border-gray-100 hover:border-gray-200 hover:shadow-sm'
+                  }`}
+                >
+                   <div className="flex items-center gap-3 min-w-0">
+                      <div className={`w-8 h-8 flex-shrink-0 rounded-full flex items-center justify-center font-bold text-sm shadow-sm ${
+                           index === 0 ? 'bg-gradient-to-br from-amber-400 to-amber-600 text-white' :
+                           index === 1 ? 'bg-gradient-to-br from-gray-300 to-gray-500 text-white' :
+                           index === 2 ? 'bg-gradient-to-br from-orange-300 to-orange-500 text-white' :
+                           'bg-gray-100 text-gray-500'
+                      }`}>
+                          {index < 3 ? (
+                            index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉'
+                          ) : (
+                            index + 1
+                          )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                           <h3 className={`font-bold truncate text-sm ${index < 3 ? 'text-gray-900' : 'text-gray-700'}`}>
+                              {entry.studentName}
+                           </h3>
+                           {index === 0 && <span className="text-[10px] text-amber-600 font-medium block truncate">Guruh yetakchisi</span>}
+                      </div>
+                   </div>
+                   
+                   <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                       <div className={`px-2 py-1 rounded-full font-bold flex items-center gap-1 text-xs ${
+                          index === 0 ? 'bg-amber-100 text-amber-700' :
+                          index === 1 ? 'bg-gray-100 text-gray-700' :
+                          index === 2 ? 'bg-orange-100 text-orange-700' :
+                          'bg-blue-50 text-blue-700'
+                       }`}>
+                          <span>{entry.totalCoins}</span>
+                          <span className="text-[10px]">🪙</span>
+                       </div>
+                   </div>
+                </div>
+              ))}
+            </div>
         </div>
-      )}
+      </Modal>
 
       {isStudent ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -434,11 +430,11 @@ const GroupDetails = () => {
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
             <h2 className="text-xl font-bold text-gray-900">Guruh o'quvchilari ({totalStudents})</h2>
-            <div className="flex w-full md:w-auto gap-2">
+            <div className="flex flex-wrap w-full md:w-auto gap-2">
                 {(isAdmin || isTeacher) && (
                     <button
                         onClick={handleOpenAttendanceModal}
-                        className="flex-1 md:flex-none justify-center cursor-pointer flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
+                        className="flex-1 md:flex-none justify-center cursor-pointer flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors whitespace-nowrap"
                     >
                         <FiCheckCircle /> Davomat
                     </button>
@@ -446,10 +442,11 @@ const GroupDetails = () => {
                 {isAdmin && (
                     <button
                         onClick={() => setIsAddStudentModalOpen(true)}
-                        className="flex-1 md:flex-none cursor-pointer flex items-center justify-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+                        className="flex-1 md:flex-none cursor-pointer flex items-center justify-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors whitespace-nowrap"
                     >
                         <FiUserPlus />
                         <span className="hidden md:inline">O'quvchi qo'shish</span>
+                        <span className="inline md:hidden">Qo'shish</span>
                     </button>
                 )}
             </div>
@@ -741,6 +738,30 @@ const GroupDetails = () => {
                   {amount}
                 </button>
               ))}
+            </div>
+            
+            <div className="mt-4 flex items-center gap-3">
+              <button 
+                  type="button"
+                  onClick={() => setCoinAmount(prev => Math.max(1, prev - 1))}
+                  className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center text-xl font-bold text-gray-600 hover:bg-gray-200"
+              >
+                  -
+              </button>
+              <input 
+                  type="number"
+                  min="1"
+                  value={coinAmount}
+                  onChange={(e) => setCoinAmount(Number(e.target.value))}
+                  className="flex-1 text-center font-bold text-xl py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500 outline-none"
+              />
+              <button 
+                  type="button"
+                  onClick={() => setCoinAmount(prev => prev + 1)}
+                  className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center text-xl font-bold text-gray-600 hover:bg-gray-200"
+              >
+                  +
+              </button>
             </div>
           </div>
 

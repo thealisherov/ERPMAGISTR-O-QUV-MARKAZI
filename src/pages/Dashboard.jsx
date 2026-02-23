@@ -1,5 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { dashboardApi } from '../api/dashboard.api';
+import { usersApi } from '../api/users.api';
+import { studentsApi } from '../api/students.api';
+import { paymentsApi } from '../api/payments.api';
 import { useAuth } from '../hooks/useAuth';
 import { FiUsers, FiUserCheck, FiCreditCard, FiTrendingUp, FiPlus, FiBook, FiAward, FiClock, FiAlertTriangle } from 'react-icons/fi';
 import { useNavigate } from 'react-router-dom';
@@ -37,8 +40,31 @@ const Dashboard = () => {
     queryKey: ['dashboardStats', role],
     queryFn: async () => {
       if (!role) return null;
-      const response = await dashboardApi.getDashboardByRole(role);
-      return response.data;
+      let response = await dashboardApi.getDashboardByRole(role);
+      let data = response.data;
+      
+      if (role === 'ADMIN') {
+        try {
+          const [studentsRes, teachersRes, orphanedRes, paymentsRes] = await Promise.all([
+            usersApi.getStudents().catch(() => ({ data: [] })),
+            usersApi.getTeachers().catch(() => ({ data: [] })),
+            studentsApi.getOrphanedStudents().catch(() => ({ data: [] })),
+            paymentsApi.getAll().catch(() => ({ data: [] }))
+          ]);
+
+          data.totalStudents = studentsRes.data.length;
+          data.totalTeachers = teachersRes.data.length;
+          data.orphanedStudentsCount = orphanedRes.data.length;
+          
+          const totalAmount = (paymentsRes.data || []).reduce((sum, p) => sum + Number(p.amount || 0), 0);
+          data.paymentStats = {
+            totalAmount: totalAmount
+          };
+        } catch (error) {
+          console.error('Error fetching extra admin stats:', error);
+        }
+      }
+      return data;
     },
     enabled: !!role,
     staleTime: 5 * 60 * 1000,
@@ -106,11 +132,11 @@ const Dashboard = () => {
   const quickActions = getQuickActions();
 
   return (
-    <div className="p-4 sm:p-6 bg-gray-50 min-h-screen">
-      <div className="mb-6">
-        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Dashboard</h1>
-        <p className="text-gray-600 mt-1">
-          Xush kelibsiz, {user?.fullName}! ({role})
+    <div className="p-4 sm:p-6 lg:p-8 bg-gray-50/50 min-h-screen">
+      <div className="mb-8">
+        <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-gray-900 tracking-tight">Dashboard</h1>
+        <p className="text-gray-500 mt-2 text-sm sm:text-base">
+          Xush kelibsiz, <span className="font-semibold text-gray-700">{user?.fullName}</span>! ({role})
         </p>
       </div>
 
@@ -145,35 +171,31 @@ const Dashboard = () => {
           Array.from({ length: 4 }).map((_, index) => (
             <div
               key={index}
-              className="bg-white rounded-xl shadow-md p-6 animate-pulse"
+              className="bg-white rounded-2xl shadow-sm p-5 sm:p-6 flex items-center justify-between gap-4 animate-pulse border border-gray-50"
             >
-              <div className="flex items-center justify-between">
-                <div className="flex-1">
-                  <div className="h-4 bg-gray-200 rounded w-24 mb-3"></div>
-                  <div className="h-8 bg-gray-200 rounded w-32"></div>
-                </div>
-                <div className="w-14 h-14 bg-gray-200 rounded-xl"></div>
+              <div className="flex-1 min-w-0">
+                <div className="h-4 bg-gray-200 rounded w-24 mb-3"></div>
+                <div className="h-6 sm:h-8 bg-gray-200 rounded w-32"></div>
               </div>
+              <div className="w-12 h-12 sm:w-16 sm:h-16 shrink-0 bg-gray-200 rounded-2xl"></div>
             </div>
           ))
         ) : (
           statCards.map((card, index) => {
-            const Icon = card.icon;
             return (
               <div
                 key={index}
-                className="bg-white rounded-xl shadow-md hover:shadow-xl transition-all p-6"
+                className="bg-white rounded-2xl border border-gray-50 shadow-sm hover:shadow-xl transition-all duration-300 p-4 xl:p-5 relative overflow-hidden group hover:-translate-y-1 cursor-default"
               >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600 font-medium">{card.title}</p>
-                    <h3 className="text-2xl font-bold text-gray-900 mt-2">
-                      {card.value}
-                    </h3>
-                  </div>
-                  <div className={`w-14 h-14 bg-gradient-to-br ${card.bgColor} rounded-xl flex items-center justify-center`}>
-                    <Icon className="h-7 w-7 text-white" />
-                  </div>
+                <div className={`absolute top-0 right-0 -mt-6 -mr-6 w-32 h-32 bg-gradient-to-br ${card.bgColor} opacity-10 rounded-full group-hover:scale-150 transition-transform duration-700 ease-out pointer-events-none`}></div>
+                <div className="relative z-10 flex flex-col justify-center h-full">
+                  <p className="text-xs sm:text-sm text-gray-500 font-medium truncate mb-1">{card.title}</p>
+                  <h3 
+                    className="text-base sm:text-lg md:text-xl font-extrabold text-gray-900 tracking-tight break-words"
+                    title={card.value}
+                  >
+                    {card.value}
+                  </h3>
                 </div>
               </div>
             );
@@ -181,23 +203,23 @@ const Dashboard = () => {
         )}
       </div>
 
-      <div className="mt-6">
-        <div className="bg-white rounded-xl shadow-md p-6">
-          <h2 className="text-lg font-bold text-gray-900 mb-4">
-            Tez Harakatlar
-          </h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3">
-            {quickActions.map((action, i) => (
-              <button
-                key={i}
-                onClick={() => navigate(action.path)}
-                className="cursor-pointer p-4 border-2 border-gray-200 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-all flex flex-col items-center justify-center gap-2 text-center"
-              >
-                <action.icon className="h-6 w-6 text-blue-600" />
-                <p className="text-sm font-medium text-gray-700">{action.label}</p>
-              </button>
-            ))}
-          </div>
+      <div className="mt-8">
+        <h2 className="text-lg sm:text-xl font-bold text-gray-900 mb-4 px-1">
+          Tez Harakatlar
+        </h2>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-5">
+          {quickActions.map((action, i) => (
+            <button
+              key={i}
+              onClick={() => navigate(action.path)}
+              className="cursor-pointer p-4 sm:p-5 bg-white border border-gray-100 rounded-2xl shadow-sm hover:shadow-lg hover:border-blue-400 hover:bg-blue-50/50 transition-all duration-300 flex items-center gap-3 sm:gap-4 text-left group"
+            >
+              <div className="p-3 sm:p-4 bg-blue-50 rounded-xl group-hover:scale-110 group-hover:bg-blue-100 transition-all duration-300 shrink-0">
+                <action.icon className="h-5 w-5 sm:h-6 sm:w-6 text-blue-600" />
+              </div>
+              <p className="text-sm sm:text-base font-bold text-gray-700 group-hover:text-blue-700 transition-colors line-clamp-2">{action.label}</p>
+            </button>
+          ))}
         </div>
       </div>
 

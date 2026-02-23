@@ -1,30 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { paymentsApi } from '../api/payments.api';
 import { teachersApi } from '../api/teachers.api';
 import { useAuth } from '../hooks/useAuth';
-import { FiPlus, FiSearch, FiCreditCard, FiDollarSign, FiCheck, FiEdit2, FiTrash2, FiX } from 'react-icons/fi';
+import { FiPlus, FiSearch, FiCreditCard, FiDollarSign, FiEdit2, FiTrash2, FiUser, FiPhone, FiCheckCircle, FiXCircle, FiCalendar } from 'react-icons/fi';
 import { groupsApi } from '../api/groups.api';
 import Modal from '../components/common/Modal';
 import ConfirmDialog from '../components/common/ConfirmDialog';
 import toast from 'react-hot-toast';
 
-
-/**
- * Payments Page - Backend bilan 100% mos
- * 
- * Backend PaymentDTO: {
- *   id, studentId, studentName, teacherId, teacherName,
- *   groupId, groupName, amount, paymentDate, method, notes, createdAt
- * }
- * 
- * Backend PaymentMethod: CASH | CARD | TRANSFER
- * 
- * Permissions:
- * - ADMIN: Can view ALL payments (Pending + Confirmed), confirm payments, view by teacher/student/group
- * - TEACHER: Can create payments, view own payments
- * - STUDENT: Can view own payments
- */
+const MONTHLY_FEE = 320000; // Fixed monthly fee for now
 
 const formatCurrency = (amount) => {
   if (amount === undefined || amount === null) return '0 UZS';
@@ -56,51 +41,114 @@ const Payments = () => {
   const { user } = useAuth();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  
+  // Filter state for Month Selection
+  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM
 
   const isAdmin = user?.role === 'ADMIN';
   const isTeacher = user?.role === 'TEACHER';
+  const isStudent = user?.role === 'STUDENT';
   
   const [editingPayment, setEditingPayment] = useState(null);
+  const [preSelectedStudent, setPreSelectedStudent] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState({ open: false, paymentId: null });
 
-  // Fetch payments based on role
-  const { data: payments = [], isLoading: loading } = useQuery({
+  // 1. Fetch Data
+  const { data: payments = [], isLoading: paymentsLoading } = useQuery({
     queryKey: ['payments', user?.role],
     queryFn: async () => {
-      if (isAdmin) {
-        // Admin sees ALL payments (via workaround fetching from teachers)
-        const response = await paymentsApi.getAll();
-        return response.data;
-      } else if (isTeacher) {
-        // Teacher sees their own payments
-        const response = await paymentsApi.getTeacherPayments();
-        return response.data;
-      } else {
-        // Student sees their own payments
-        const response = await paymentsApi.getStudentPayments();
-        return response.data;
-      }
+      if (isAdmin) return (await paymentsApi.getAll()).data;
+      if (isTeacher) return (await paymentsApi.getTeacherPayments()).data;
+      return (await paymentsApi.getStudentPayments()).data;
     },
     enabled: !!user,
   });
 
+  const { data: myStudents = [], isLoading: studentsLoading } = useQuery({
+    queryKey: ['myStudents', user?.role],
+    queryFn: async () => {
+      if (isTeacher) return (await teachersApi.getMyStudents()).data;
+      return [];
+    },
+    enabled: isTeacher,
+  });
 
+  // 2. Data Processing for Teacher View (Student Status)
+  const studentStatusList = useMemo(() => {
+    if (!isTeacher) return [];
 
-  const handleOpenModal = () => {
-    if (!isTeacher && !isAdmin) {
-      toast.error("Huquqingiz yo'q");
-      return;
+    const [yearStr, monthStr] = selectedMonth.split('-');
+    const filterYear = parseInt(yearStr);
+    const filterMonth = parseInt(monthStr) - 1; // JS months are 0-indexed
+
+    return myStudents.map(student => {
+      // Find payments for this student
+      const studentPayments = payments.filter(p => p.studentId === student.id);
+      
+      // Calculate total paid this month
+      const currentMonthPayments = studentPayments.filter(p => {
+        const d = new Date(p.paymentDate);
+        return d.getMonth() === filterMonth && d.getFullYear() === filterYear;
+      });
+
+      const paidThisMonth = currentMonthPayments.reduce((sum, p) => sum + Number(p.amount), 0);
+      const debt = Math.max(0, MONTHLY_FEE - paidThisMonth);
+      const status = debt <= 0 ? 'PAID' : 'UNPAID';
+      
+      // Get the ID of the main payment for this month (if any) to allow editing/deleting
+      const monthPayment = currentMonthPayments.length > 0 ? currentMonthPayments[0] : null;
+
+      const groupNames = student.groupName || student.groups?.map(g => g.name || g).join(', ') || '-';
+
+      return {
+        ...student,
+        groupNames,
+        paidThisMonth,
+        debt,
+        status,
+        monthPayment, // The payment object for this month, if exists
+        lastPaymentDate: studentPayments.length > 0 ? studentPayments[0].paymentDate : null
+      };
+    });
+  }, [myStudents, payments, isTeacher, selectedMonth]);
+
+  const filteredData = useMemo(() => {
+    const searchLower = searchTerm.toLowerCase();
+    if (isTeacher) {
+      return studentStatusList.filter(s => 
+        (s.fullName?.toLowerCase() || '').includes(searchLower) ||
+        (s.phone?.toLowerCase() || '').includes(searchLower)
+      );
     }
+    return payments.filter(payment => {
+        return (
+          (payment.studentName?.toLowerCase() || '').includes(searchLower) ||
+          (payment.teacherName?.toLowerCase() || '').includes(searchLower) ||
+          (payment.groupName?.toLowerCase() || '').includes(searchLower)
+        );
+    });
+  }, [searchTerm, isTeacher, studentStatusList, payments]);
+
+  // Generators
+  const handleOpenModal = () => {
     setEditingPayment(null);
+    setPreSelectedStudent(null);
     setIsModalOpen(true);
   };
 
-  const handleEdit = (payment) => {
+  const handlePayForStudent = (student) => {
+    setEditingPayment(null);
+    setPreSelectedStudent(student);
+    setIsModalOpen(true);
+  };
+
+  const handleEditPayment = (payment) => {
     setEditingPayment(payment);
+    setPreSelectedStudent(null);
     setIsModalOpen(true);
   };
 
-  const handleDelete = (paymentId) => {
+  const handleDeletePayment = (paymentId) => {
     setDeleteConfirm({ open: true, paymentId });
   };
 
@@ -116,14 +164,9 @@ const Payments = () => {
     },
   });
 
-  const filteredPayments = payments.filter(payment => {
-    const searchLower = searchTerm.toLowerCase();
-    const matchesSearch =
-      (payment.studentName?.toLowerCase() || '').includes(searchLower) ||
-      (payment.teacherName?.toLowerCase() || '').includes(searchLower) ||
-      (payment.groupName?.toLowerCase() || '').includes(searchLower);
-    return matchesSearch;
-  });
+  if (paymentsLoading || (isTeacher && studentsLoading)) {
+    return <div className="text-center py-12 text-gray-500">Yuklanmoqda...</div>;
+  }
 
   return (
     <div className="p-4 sm:p-6">
@@ -132,10 +175,10 @@ const Payments = () => {
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold text-gray-800">To'lovlar</h1>
             <p className="text-gray-600 mt-1">
-              {isAdmin ? "Barcha to'lovlar" : isTeacher ? "Mening to'lovlarim" : "Mening to'lovlarim"}
+              {isTeacher ? "O'quvchilar to'lov holati" : isAdmin ? "Barcha to'lovlar" : "Mening to'lovlarim"}
             </p>
           </div>
-          {(isTeacher || isAdmin) && (
+          {!isStudent && (
             <button
               onClick={handleOpenModal}
               className="cursor-pointer bg-blue-600 text-white px-4 py-2.5 rounded-lg flex items-center gap-2 hover:bg-blue-700 transition-colors w-full sm:w-auto justify-center font-medium"
@@ -145,117 +188,137 @@ const Payments = () => {
           )}
         </div>
 
-        <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
-          <div className="relative flex-1">
-            <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Qidirish (talaba, o'qituvchi, guruh)..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
+        <div className="flex flex-col sm:flex-row gap-3">
+            <div className="relative flex-1">
+              <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+              <input
+                type="text"
+                placeholder={isTeacher ? "O'quvchi qidirish..." : "Qidirish..."}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+            </div>
+            {isTeacher && (
+                <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <FiCalendar className="text-gray-400" />
+                    </div>
+                    <input
+                        type="month"
+                        value={selectedMonth}
+                        onChange={(e) => setSelectedMonth(e.target.value)}
+                        className="pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+                    />
+                </div>
+            )}
         </div>
       </div>
 
-      {loading ? (
-        <div className="text-center py-12 text-gray-500">Yuklanmoqda...</div>
-      ) : filteredPayments.length === 0 ? (
-        <div className="text-center py-12 text-gray-500">To'lovlar topilmadi</div>
-      ) : (
-        <>
-          {/* Mobile Cards */}
-          <div className="block sm:hidden space-y-4">
-            {filteredPayments.map((payment) => (
-              <div key={payment.id} className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow">
-                <div className="flex justify-between items-start mb-3">
-                  <div className="min-w-0">
-                    <h3 className="font-semibold text-gray-900 truncate">{payment.studentName}</h3>
-                    <p className="text-xs text-gray-500">{payment.groupName}</p>
-                  </div>
-                  <span className="text-lg font-bold text-green-600 flex-shrink-0 ml-2">
-                    {formatCurrency(payment.amount)}
-                  </span>
-                </div>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">O'qituvchi:</span>
-                    <span className="text-gray-900">{payment.teacherName}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Usul:</span>
-                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                      payment.method === 'CASH' ? 'bg-green-100 text-green-700' :
-                      payment.method === 'CARD' ? 'bg-blue-100 text-blue-700' :
-                      'bg-purple-100 text-purple-700'
-                    }`}>
-                      {payment.method === 'CASH' ? 'Naqd' : payment.method === 'CARD' ? 'Karta' : 'Transfer'}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">Sana:</span>
-                    <span className="text-gray-900">{formatDateTime(payment.paymentDate)}</span>
-                  </div>
-                </div>
-
-                {/* Actions for Admin/Teacher */}
-                {(isAdmin || isTeacher) && (
-                  <div className="flex justify-end gap-2 border-t pt-3 mt-3">
-                    <button
-                      onClick={() => handleEdit(payment)}
-                      className="p-2 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
-                      title="Tahrirlash"
-                    >
-                      <FiEdit2 size={18} />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(payment.id)}
-                      className="p-2 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors"
-                      title="O'chirish"
-                    >
-                      <FiTrash2 size={18} />
-                    </button>
-                  </div>
+      {isTeacher ? (
+        // TEACHER VIEW: Student Status List with Month Filter
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left min-w-[900px]">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">O'quvchi</th>
+                  <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Telefon</th>
+                  <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Guruhlar</th>
+                  <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase text-green-700">To'lagan ({selectedMonth})</th>
+                  <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase text-red-600">Qarzdorlik</th>
+                  <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Status</th>
+                  <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase text-right">Amallar</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {filteredData.length === 0 ? (
+                  <tr>
+                    <td colSpan="7" className="px-6 py-8 text-center text-gray-500">O'quvchilar topilmadi</td>
+                  </tr>
+                ) : (
+                  filteredData.map((student) => (
+                    <tr key={student.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-xs shrink-0">
+                                {student.fullName?.charAt(0)}
+                            </div>
+                            <div>
+                                <div className="font-semibold text-gray-900">{student.fullName}</div>
+                                <div className="text-xs text-gray-500">{student.phone}</div>
+                            </div>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-500">{student.phone}</td>
+                      <td className="px-6 py-4 text-sm text-gray-600">{student.groupNames}</td>
+                      <td className="px-6 py-4 text-sm text-green-600 font-bold">{formatCurrency(student.paidThisMonth)}</td>
+                      <td className="px-6 py-4 text-sm text-red-600 font-bold">{formatCurrency(student.debt)}</td>
+                      <td className="px-6 py-4">
+                        <span className={`px-2 py-1 rounded text-xs font-medium ${
+                          student.status === 'PAID' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                        }`}>
+                          {student.status === 'PAID' ? "To'liq" : "To'lamagan"}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                         {student.status === 'PAID' && student.monthPayment ? (
+                             <div className="flex items-center justify-end gap-2">
+                                 <button
+                                     onClick={() => handleEditPayment(student.monthPayment)}
+                                     className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                     title="Tahrirlash"
+                                 >
+                                     <FiEdit2 size={16} />
+                                 </button>
+                                 <button
+                                     onClick={() => handleDeletePayment(student.monthPayment.id)}
+                                     className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                     title="O'chirish"
+                                 >
+                                     <FiTrash2 size={16} />
+                                 </button>
+                             </div>
+                         ) : (
+                             <button
+                               onClick={() => handlePayForStudent(student)}
+                               className="bg-blue-600 text-white px-3 py-1.5 rounded text-sm hover:bg-blue-700 transition-colors shadow-sm"
+                             >
+                               To'lov
+                             </button>
+                         )}
+                      </td>
+                    </tr>
+                  ))
                 )}
-              </div>
-
-            ))}
+              </tbody>
+            </table>
           </div>
-
-          {/* Desktop Table */}
-          <div className="hidden sm:block bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-            <div className="overflow-x-auto">
+        </div>
+      ) : (
+        // ADMIN / STUDENT VIEW: Payments Log
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+             <div className="overflow-x-auto">
               <table className="w-full text-left min-w-[800px]">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
                     <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Talaba</th>
                     <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Guruh</th>
-                    <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">O'qituvchi</th>
                     <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Summa</th>
                     <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Usul</th>
                     <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Sana</th>
-                    {(isAdmin || isTeacher) && (
-                      <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase text-right">Amallar</th>
-                    )}
-
+                    {isAdmin && <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase text-right">Amallar</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200">
-                  {filteredPayments.map((payment) => (
+                  {filteredData.length === 0 ? (
+                     <tr><td colSpan="6" className="text-center py-8 text-gray-500">To'lovlar topilmadi</td></tr>
+                  ) : (
+                    filteredData.map((payment) => (
                     <tr key={payment.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 text-sm font-medium text-gray-900">
-                        {payment.studentName}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-500">
-                        {payment.groupName}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-500">
-                        {payment.teacherName}
-                      </td>
-                      <td className="px-6 py-4 text-sm font-bold text-green-600">
-                        {formatCurrency(payment.amount)}
-                      </td>
+                      <td className="px-6 py-4 text-sm font-medium text-gray-900">{payment.studentName}</td>
+                      <td className="px-6 py-4 text-sm text-gray-500">{payment.groupName}</td>
+                      <td className="px-6 py-4 text-sm font-bold text-green-600">{formatCurrency(payment.amount)}</td>
                       <td className="px-6 py-4 text-sm">
                         <span className={`px-2 py-1 rounded text-xs font-medium ${
                           payment.method === 'CASH' ? 'bg-green-100 text-green-700' :
@@ -265,36 +328,20 @@ const Payments = () => {
                           {payment.method === 'CASH' ? 'Naqd' : payment.method === 'CARD' ? 'Karta' : 'Transfer'}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-500">
-                        {formatDateTime(payment.paymentDate)}
-                      </td>
-                      {(isAdmin || isTeacher) && (
+                      <td className="px-6 py-4 text-sm text-gray-500">{formatDateTime(payment.paymentDate)}</td>
+                      {isAdmin && (
                         <td className="px-6 py-4 text-sm text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            <button
-                              onClick={() => handleEdit(payment)}
-                              className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                              title="Tahrirlash"
-                            >
-                              <FiEdit2 size={18} />
-                            </button>
-                            <button
-                              onClick={() => handleDelete(payment.id)}
-                              className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                              title="O'chirish"
-                            >
-                              <FiTrash2 size={18} />
-                            </button>
-                          </div>
+                          <button onClick={() => handleEditPayment(payment)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg mr-2"><FiEdit2 /></button>
+                          <button onClick={() => handleDeletePayment(payment.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg"><FiTrash2 /></button>
                         </td>
                       )}
                     </tr>
-                  ))}
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
-          </div>
-        </>
+        </div>
       )}
 
       {isModalOpen && (
@@ -302,6 +349,7 @@ const Payments = () => {
           isOpen={isModalOpen}
           onClose={() => setIsModalOpen(false)}
           payment={editingPayment}
+          preSelectedStudent={preSelectedStudent}
         />
       )}
 
@@ -310,48 +358,36 @@ const Payments = () => {
         onClose={() => setDeleteConfirm({ open: false, paymentId: null })}
         onConfirm={() => deleteMutation.mutate(deleteConfirm.paymentId)}
         title="To'lovni o'chirish"
-        message="Haqiqatan ham bu to'lovni o'chirmoqchimisiz? Bu amalni ortga qaytarib bo'lmaydi."
+        message="Haqiqatan ham bu to'lovni o'chirmoqchimisiz?"
         confirmText="O'chirish"
-        cancelText="Bekor qilish"
         type="danger"
         loading={deleteMutation.isPending}
       />
-
-
     </div>
   );
 };
 
-/**
- * Payment Modal - Create or Edit payment
- * Backend CreatePaymentRequest: { studentId, groupId, amount, paymentDate, method, notes }
- * Backend UpdatePaymentRequest: { studentId, groupId, amount, paymentDate, method, notes }
- */
-const PaymentModal = ({ isOpen, onClose, payment = null }) => {
+// Payment Modal Component
+const PaymentModal = ({ isOpen, onClose, payment = null, preSelectedStudent = null }) => {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
 
   const [formData, setFormData] = useState({
-    studentId: payment?.studentId || '',
+    studentId: payment?.studentId || preSelectedStudent?.id || '',
     groupId: payment?.groupId || '',
-    amount: payment?.amount || '',
+    amount: payment?.amount || MONTHLY_FEE,
     paymentDate: payment?.paymentDate ? new Date(payment.paymentDate).toISOString().slice(0, 16) : new Date().toISOString().slice(0, 16),
     method: payment?.method || 'CASH',
     notes: payment?.notes || '',
   });
 
-  // Fetch groups based on role
+  // Fetch groups
   const { data: groups = [] } = useQuery({
     queryKey: ['payment-modal-groups', user?.role],
     queryFn: async () => {
-      if (isAdmin) {
-        const response = await groupsApi.getAdminGroups();
-        return response.data;
-      } else {
-        const response = await teachersApi.getMyGroups();
-        return response.data;
-      }
+      const res = isAdmin ? await groupsApi.getAdminGroups() : await teachersApi.getMyGroups();
+      return res.data;
     },
     enabled: isOpen,
   });
@@ -361,27 +397,20 @@ const PaymentModal = ({ isOpen, onClose, payment = null }) => {
     queryKey: ['payment-modal-students', formData.groupId],
     queryFn: async () => {
       if (!formData.groupId) return [];
-      if (isAdmin) {
-        const response = await groupsApi.getGroupStudents(formData.groupId);
-        return response.data;
-      } else {
-        const response = await teachersApi.getGroupStudents(formData.groupId);
-        return response.data;
-      }
+      const res = isAdmin ? await groupsApi.getGroupStudents(formData.groupId) : await teachersApi.getGroupStudents(formData.groupId);
+      return res.data;
     },
     enabled: !!formData.groupId,
   });
 
   const mutation = useMutation({
     mutationFn: (data) => {
-      if (payment?.id) {
-        return paymentsApi.update(payment.id, data, user.role);
-      }
+      if (payment?.id) return paymentsApi.update(payment.id, data, user.role);
       return paymentsApi.create(data, user.role);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['payments'] });
-      toast.success(payment ? "To'lov yangilandi" : "To'lov muvaffaqiyatli yaratildi");
+      toast.success(payment ? "To'lov yangilandi" : "To'lov qabul qilindi");
       onClose();
     },
     onError: (error) => {
@@ -389,144 +418,99 @@ const PaymentModal = ({ isOpen, onClose, payment = null }) => {
     },
   });
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
-    
     if (!formData.groupId || !formData.studentId || !formData.amount) {
-      toast.error("Barcha maydonlarni to'ldiring");
+      toast.error("Ma'lumotlar to'liq emas");
       return;
     }
-
-    const payload = {
+    mutation.mutate({
+      ...formData,
       studentId: Number(formData.studentId),
       groupId: Number(formData.groupId),
       amount: parseFloat(formData.amount),
-      paymentDate: formData.paymentDate,
-      method: formData.method,
-      notes: formData.notes || ''
-    };
-
-    mutation.mutate(payload);
+    });
   };
 
-  if (!isOpen) return null;
-
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={payment ? "To'lovni tahrirlash" : "Yangi To'lov"}>
+    <Modal isOpen={isOpen} onClose={onClose} title={payment ? "To'lovni tahrirlash" : preSelectedStudent ? `${preSelectedStudent.fullName} uchun to'lov` : "Yangi to'lov"}>
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Guruh</label>
           <select
             required
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
             value={formData.groupId}
             onChange={(e) => setFormData({ ...formData, groupId: e.target.value, studentId: '' })}
           >
             <option value="">Tanlang</option>
-            {groups.map(group => (
-              <option key={group.id} value={group.id}>
-                {group.name}
-              </option>
+            {groups.map(g => (
+              <option key={g.id} value={g.id}>{g.name}</option>
             ))}
           </select>
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Talaba</label>
-          <select
-            required
-            disabled={!formData.groupId}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none disabled:bg-gray-100"
-            value={formData.studentId}
-            onChange={(e) => setFormData({ ...formData, studentId: e.target.value })}
-          >
-            <option value="">Tanlang</option>
-            {students.map(student => (
-              <option key={student.id} value={student.id}>
-                {student.fullName}
-              </option>
-            ))}
-          </select>
+           <label className="block text-sm font-medium text-gray-700 mb-1">Talaba</label>
+           <select
+             required
+             disabled={!formData.groupId && !preSelectedStudent} 
+             className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
+             value={formData.studentId}
+             onChange={(e) => setFormData({ ...formData, studentId: e.target.value })}
+           >
+             <option value="">Tanlang</option>
+             {students.map(s => (
+               <option key={s.id} value={s.id}>{s.fullName}</option>
+             ))}
+           </select>
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-3">To'lov usuli</label>
+           <label className="block text-sm font-medium text-gray-700 mb-1">Summa (UZS)</label>
+           <input 
+             type="number"
+             required
+             className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
+             value={formData.amount}
+             onChange={(e) => setFormData({...formData, amount: e.target.value})}
+           />
+        </div>
+        
+        {/* Methods */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">To'lov usuli</label>
           <div className="flex gap-4">
-            <label className={`flex items-center gap-2 cursor-pointer p-3 border-2 rounded-lg transition-all hover:bg-gray-50 flex-1 ${
-              formData.method === 'CASH' ? 'border-blue-500 bg-blue-50' : 'border-gray-300'
-            }`}>
-              <input
-                type="radio"
-                name="paymentMethod"
-                value="CASH"
-                checked={formData.method === 'CASH'}
-                onChange={(e) => setFormData({ ...formData, method: e.target.value })}
-                className="w-4 h-4 text-blue-600 cursor-pointer"
-              />
-              <FiDollarSign className="text-green-600 text-xl" />
-              <span className="font-medium text-gray-700">Naqd</span>
-            </label>
-
-            <label className={`flex items-center gap-2 cursor-pointer p-3 border-2 rounded-lg transition-all hover:bg-gray-50 flex-1 ${
-              formData.method === 'CARD' ? 'border-blue-500 bg-blue-50' : 'border-gray-300'
-            }`}>
-              <input
-                type="radio"
-                name="paymentMethod"
-                value="CARD"
-                checked={formData.method === 'CARD'}
-                onChange={(e) => setFormData({ ...formData, method: e.target.value })}
-                className="w-4 h-4 text-blue-600 cursor-pointer"
-              />
-              <FiCreditCard className="text-blue-600 text-xl" />
-              <span className="font-medium text-gray-700">Karta</span>
-            </label>
-
-            <label className={`flex items-center gap-2 cursor-pointer p-3 border-2 rounded-lg transition-all hover:bg-gray-50 flex-1 ${
-              formData.method === 'TRANSFER' ? 'border-blue-500 bg-blue-50' : 'border-gray-300'
-            }`}>
-              <input
-                type="radio"
-                name="paymentMethod"
-                value="TRANSFER"
-                checked={formData.method === 'TRANSFER'}
-                onChange={(e) => setFormData({ ...formData, method: e.target.value })}
-                className="w-4 h-4 text-blue-600 cursor-pointer"
-              />
-              <span className="font-medium text-gray-700">Transfer</span>
-            </label>
+            {['CASH', 'CARD', 'TRANSFER'].map(m => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setFormData({...formData, method: m})}
+                className={`flex-1 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                  formData.method === m ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 hover:bg-gray-50'
+                }`}
+              >
+                {m === 'CASH' ? 'Naqd' : m === 'CARD' ? 'Karta' : 'Transfer'}
+              </button>
+            ))}
           </div>
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">To'lov sanasi</label>
-          <input
-            type="datetime-local"
-            required
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-            value={formData.paymentDate}
-            onChange={(e) => setFormData({ ...formData, paymentDate: e.target.value })}
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Summa (UZS)</label>
-          <input
-            type="number"
-            required
-            min="0"
-            step="1000"
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-            value={formData.amount}
-            onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-            placeholder="500000"
-          />
+           <label className="block text-sm font-medium text-gray-700 mb-1">To'lov sanasi</label>
+           <input 
+             type="datetime-local"
+             required
+             className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
+             value={formData.paymentDate}
+             onChange={(e) => setFormData({...formData, paymentDate: e.target.value})}
+           />
         </div>
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Izoh</label>
           <textarea
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
             rows="3"
             value={formData.notes}
             onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
@@ -535,21 +519,10 @@ const PaymentModal = ({ isOpen, onClose, payment = null }) => {
         </div>
 
         <div className="flex justify-end gap-3 mt-6">
-          <button
-            type="button"
-            onClick={onClose}
-            className="cursor-pointer px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-          >
-            Bekor qilish
-          </button>
-          <button
-            type="submit"
-            disabled={mutation.isPending}
-            className="cursor-pointer px-4 py-2 text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-50"
-          >
-            {mutation.isPending ? 'Saqlanmoqda...' : 'Saqlash'}
-          </button>
+           <button type="button" onClick={onClose} className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors">Bekor qilish</button>
+           <button type="submit" disabled={mutation.isPending} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50">{mutation.isPending ? 'Saqlanmoqda...' : 'Saqlash'}</button>
         </div>
+
       </form>
     </Modal>
   );
