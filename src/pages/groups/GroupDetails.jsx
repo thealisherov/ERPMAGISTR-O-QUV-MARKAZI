@@ -6,6 +6,7 @@ import { studentsApi } from '../../api/students.api';
 import { teachersApi } from '../../api/teachers.api';
 import { attendanceApi } from '../../api/attendance.api';
 import { coinsApi } from '../../api/coins.api';
+import { paymentsApi } from '../../api/payments.api';
 import { useAuth } from '../../hooks/useAuth';
 import {
   FiUsers,
@@ -92,10 +93,11 @@ const GroupDetails = () => {
     queryKey: ['leaderboard', id],
     queryFn: async () => {
       try {
-        const res = await coinsApi.getGroupLeaderboard(id);
+        const res = isStudent 
+          ? await coinsApi.getStudentGroupLeaderboard(id)
+          : await coinsApi.getGroupLeaderboard(id);
         return res.data;
       } catch (error) {
-        // If forbidden or error, return empty list to avoid UI issues
         console.warn("Leaderboard fetching failed:", error);
         return [];
       }
@@ -114,14 +116,14 @@ const GroupDetails = () => {
       enabled: isAddStudentModalOpen && isAdmin
   });
 
-  // Fetch My Payments (Student only)
-  const { data: myPayments = [] } = useQuery({
-    queryKey: ['myPayments'],
+  // Fetch My Payments for this Group (Student only)
+  const { data: groupPayments = [] } = useQuery({
+    queryKey: ['myPayments', id],
     queryFn: async () => {
-      const res = await studentsApi.getMyPayments();
+      const res = await paymentsApi.getStudentGroupPayments(id);
       return res.data;
     },
-    enabled: isStudent
+    enabled: !!id && isStudent
   });
 
   // Fetch My Coins for this Group (Student only)
@@ -134,7 +136,15 @@ const GroupDetails = () => {
     enabled: !!id && isStudent
   });
 
-  const groupPayments = myPayments.filter(p => p.groupId === Number(id));
+  // Fetch My Attendance for this Group (Student only)
+  const { data: groupAttendance = [] } = useQuery({
+    queryKey: ['myAttendance', id],
+    queryFn: async () => {
+      const res = await attendanceApi.getStudentGroupAttendance(id);
+      return res.data;
+    },
+    enabled: !!id && isStudent
+  });
 
   // Add student mutation
   const addStudentMutation = useMutation({
@@ -423,6 +433,36 @@ const GroupDetails = () => {
                     </div>
                 ) : (
                     <p className="text-gray-500 text-sm">Coinlar mavjud emas</p>
+                )}
+            </div>
+
+            {/* My Attendance */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 md:col-span-2">
+                <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                    <span>📅</span> Mening Davomatim
+                </h2>
+                {groupAttendance.length > 0 ? (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                        {groupAttendance.map(att => (
+                            <div key={att.id} className={`p-3 rounded-lg text-center flex flex-col justify-center items-center gap-1 border ${
+                                att.status === 'PRESENT' ? 'bg-green-50 border-green-100 text-green-700' :
+                                att.status === 'LATE' ? 'bg-yellow-50 border-yellow-100 text-yellow-700' :
+                                att.status === 'EXCUSED' ? 'bg-blue-50 border-blue-100 text-blue-700' :
+                                'bg-red-50 border-red-100 text-red-700'
+                            }`}>
+                                <span className="font-bold text-sm">
+                                  {new Date(att.lessonDate).toLocaleDateString('uz-UZ', { day: '2-digit', month: 'short' })}
+                                </span>
+                                <span className="text-xs font-semibold opacity-80 uppercase tracking-widest leading-none">
+                                  {att.status === 'PRESENT' ? 'BOR' :
+                                   att.status === 'LATE' ? 'KECH' :
+                                   att.status === 'EXCUSED' ? 'SABABLI' : 'YO\'Q'}
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <p className="text-gray-500 text-sm">Davomat mavjud emas</p>
                 )}
             </div>
         </div>

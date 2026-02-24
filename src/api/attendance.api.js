@@ -55,6 +55,11 @@ export const attendanceApi = {
     return api.get('/student/attendance/summary');
   },
 
+  // GET /student/attendance/group/{groupId} - Get attendance for specific group
+  getStudentGroupAttendance: (groupId) => {
+    return api.get(`/student/attendance/group/${groupId}`);
+  },
+
   // ========== ADMIN OPERATIONS ==========
 
   // GET /admin/attendance/group/{groupId} - Get attendance by group

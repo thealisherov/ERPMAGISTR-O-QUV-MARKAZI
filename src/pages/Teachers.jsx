@@ -143,7 +143,6 @@ const Teachers = () => {
         fullName: teacher.fullName,
         email: teacher.email,
         password: '',
-        phone: teacher.phone || '+998',
         phone: teacher.phone || '+998'
       });
     } else {

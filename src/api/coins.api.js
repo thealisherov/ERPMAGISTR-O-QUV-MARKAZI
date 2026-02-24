@@ -9,7 +9,9 @@ export const coinsApi = {
 
   // Student endpoints
   getMyCoins: () => api.get('/student/coins'),
+  getMyCoinsGrouped: () => api.get('/student/coins/grouped'),
   getMyCoinsByGroup: (groupId) => api.get(`/student/coins/group/${groupId}`),
+  getStudentGroupLeaderboard: (groupId) => api.get(`/student/coins/leaderboard/${groupId}`),
   getMySummary: () => api.get('/student/coins/summary'),
   getMyTotal: () => api.get('/student/coins/total'),
 };

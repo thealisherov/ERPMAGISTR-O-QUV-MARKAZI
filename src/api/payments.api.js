@@ -120,4 +120,9 @@ export const paymentsApi = {
   getStudentPayments: () => {
     return api.get('/student/payments');
   },
+
+  // GET /student/payments/group/{groupId} - Get my payments by group
+  getStudentGroupPayments: (groupId) => {
+    return api.get(`/student/payments/group/${groupId}`);
+  },
 };
