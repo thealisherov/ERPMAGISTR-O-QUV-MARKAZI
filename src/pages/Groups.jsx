@@ -26,7 +26,7 @@ const Groups = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingGroup, setEditingGroup] = useState(null);
   const [formData, setFormData] = useState({
-    name: '', teacherId: '', description: ''
+    name: '', teacherId: '', description: '', price: ''
   });
   
   const [scheduleData, setScheduleData] = useState({
@@ -165,7 +165,8 @@ const Groups = () => {
       setFormData({
         name: group.name,
         teacherId: group.teacherId,
-        description: group.description || ''
+        description: group.description || '',
+        price: group.price || ''
       });
 
       let parsedDays = [];
@@ -195,7 +196,7 @@ const Groups = () => {
       setEditingGroup(null);
       // If teacher is creating a new group, auto-set their ID
       const teacherId = isTeacher ? user?.userId : '';
-      setFormData({ name: '', teacherId: teacherId, description: '' });
+      setFormData({ name: '', teacherId: teacherId, description: '', price: '' });
       setScheduleData({ days: [], startTime: '', endTime: '' });
     }
     setIsModalOpen(true);
@@ -234,7 +235,8 @@ const Groups = () => {
         name: formData.name,
         description: formData.description || '',
         teacherId: Number(formData.teacherId),
-        schedule: scheduleStr.trim()
+        schedule: scheduleStr.trim(),
+        price: formData.price ? Number(formData.price) : 0
       };
 
       if (editingGroup) {
@@ -383,6 +385,18 @@ const Groups = () => {
               </select>
             </div>
           )}
+
+          <div>
+             <label className="block text-sm font-semibold text-gray-700 mb-1">Guruh narxi (UZS)</label>
+             <input
+               type="number" required
+               className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+               value={formData.price}
+               onChange={(e) => setFormData({ ...formData, price: e.target.value })}
+               placeholder="Masalan: 350000"
+               min="0"
+             />
+          </div>
 
           <div>
              <label className="block text-sm font-semibold text-gray-700 mb-2">Hafta kunlari</label>

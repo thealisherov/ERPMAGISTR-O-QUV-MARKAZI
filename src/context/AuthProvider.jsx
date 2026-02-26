@@ -12,6 +12,24 @@ const initialState = {
   initialized: false,
 };
 
+function isTokenExpired(token) {
+  if (!token) return true;
+  try {
+    const payloadStart = token.indexOf('.') + 1;
+    const payloadEnd = token.indexOf('.', payloadStart);
+    if (payloadStart === 0 || payloadEnd === -1) return true;
+    const payload = token.substring(payloadStart, payloadEnd);
+    const decodedPayload = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
+    if (decodedPayload.exp) {
+      return (decodedPayload.exp * 1000) < Date.now();
+    }
+    return false;
+  } catch (e) {
+    return true;
+  }
+}
+
+
 export const AuthProvider = ({ children }) => {
   const [state, dispatch] = useReducer(authReducer, initialState);
 
@@ -45,6 +63,20 @@ export const AuthProvider = ({ children }) => {
     };
     
     initializeAuth();
+
+    // Setup periodic token expiration check
+    const intervalId = setInterval(() => {
+      const token = localStorage.getItem('token');
+      if (token && isTokenExpired(token)) {
+        console.warn('Token expired periodically');
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        dispatch({ type: 'LOGOUT' });
+        window.location.href = '/login';
+      }
+    }, 60000); // Verify every 1 minute
+
+    return () => clearInterval(intervalId);
   }, []);
 
   const login = async (credentials) => {
@@ -104,7 +136,7 @@ export const AuthProvider = ({ children }) => {
 
     dispatch({ type: 'LOGOUT' });
     // authApi.logout is handled client side now
-    // window.location.href = '/login'; // Let the protected route component handle redirect
+    window.location.href = '/login'; // Let the protected route component handle redirect
   };
 
   const value = {

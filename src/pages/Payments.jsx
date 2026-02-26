@@ -207,7 +207,7 @@ const Payments = () => {
               {isTeacher ? "O'quvchilar to'lov holati" : isAdmin ? "To'lovlarni boshqarish" : "Mening to'lovlarim"}
             </p>
           </div>
-          {!isStudent && (
+          {isAdmin && (
             <button
               onClick={handleOpenModal}
               className="cursor-pointer bg-blue-600 text-white px-4 py-2.5 rounded-lg flex items-center gap-2 hover:bg-blue-700 transition-colors w-full sm:w-auto justify-center font-medium"
@@ -319,28 +319,34 @@ const Payments = () => {
                       <td className="px-6 py-4 text-right">
                          {student.status === 'PAID' && student.monthPayment ? (
                              <div className="flex items-center justify-end gap-2">
-                                 <button
-                                     onClick={() => handleEditPayment(student.monthPayment)}
-                                     className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                                     title="Tahrirlash"
-                                 >
-                                     <FiEdit2 size={16} />
-                                 </button>
-                                 <button
-                                     onClick={() => handleDeletePayment(student.monthPayment.id)}
-                                     className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                     title="O'chirish"
-                                 >
-                                     <FiTrash2 size={16} />
-                                 </button>
+                                 {isAdmin && (
+                                     <>
+                                         <button
+                                             onClick={() => handleEditPayment(student.monthPayment)}
+                                             className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                             title="Tahrirlash"
+                                         >
+                                             <FiEdit2 size={16} />
+                                         </button>
+                                         <button
+                                             onClick={() => handleDeletePayment(student.monthPayment.id)}
+                                             className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                             title="O'chirish"
+                                         >
+                                             <FiTrash2 size={16} />
+                                         </button>
+                                     </>
+                                 )}
                              </div>
                          ) : (
-                             <button
-                               onClick={() => handlePayForStudent(student)}
-                               className="bg-blue-600 text-white px-3 py-1.5 rounded text-sm hover:bg-blue-700 transition-colors shadow-sm"
-                             >
-                               To'lov
-                             </button>
+                             isAdmin && (
+                                 <button
+                                   onClick={() => handlePayForStudent(student)}
+                                   className="bg-blue-600 text-white px-3 py-1.5 rounded text-sm hover:bg-blue-700 transition-colors shadow-sm cursor-pointer"
+                                 >
+                                   To'lov
+                                 </button>
+                             )
                          )}
                       </td>
                     </tr>

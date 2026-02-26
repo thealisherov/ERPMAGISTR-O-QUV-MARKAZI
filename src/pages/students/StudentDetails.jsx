@@ -1,5 +1,5 @@
 import { useParams, Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { studentsApi } from '../../api/students.api';
 import { teachersApi } from '../../api/teachers.api';
 import { paymentsApi } from '../../api/payments.api';
@@ -27,6 +27,7 @@ import {
 const StudentDetails = () => {
   const { id } = useParams();
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const isAdmin = user?.role === 'ADMIN';
 
   // Fetch student data
@@ -140,6 +141,106 @@ const StudentDetails = () => {
 
         {/* Content Area */}
         <div className="lg:col-span-2 space-y-6">
+          <pre className="text-xs bg-gray-100 p-2 hidden">{JSON.stringify(student, null, 2)}</pre>
+          
+          
+          {/* Groups Section */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+              <FiBook className="text-indigo-600" />
+              Guruhlari
+            </h3>
+            
+            {(() => {
+              // 1. Check student.groups (Object or array of strings)
+              let groupList = [];
+              if (student.groups && Array.isArray(student.groups) && student.groups.length > 0) {
+                groupList = student.groups.map(g => typeof g === 'string' ? { name: g } : g);
+              } 
+              // 2. Check student.groupName string
+              else if (student.groupName && typeof student.groupName === 'string') {
+                groupList = student.groupName.split(',').map(name => ({ name: name.trim() })).filter(g => g.name);
+              } 
+              // 3. Fallback to cached list
+              else {
+                const cachedStudents = queryClient.getQueryData(['students', user?.role]) || [];
+                const listStudent = cachedStudents.find(s => s.id === Number(id) || s.id === id);
+                if (listStudent) {
+                   if (listStudent.groups && Array.isArray(listStudent.groups) && listStudent.groups.length > 0) {
+                      groupList = listStudent.groups.map(g => typeof g === 'string' ? { name: g } : g);
+                   } else if (listStudent.groupName) {
+                      groupList = listStudent.groupName.split(',').map(name => ({ name: name.trim() })).filter(g => g.name);
+                   }
+                }
+              }
+
+              // 4. Last resort: Extract from payments
+              if (groupList.length === 0 && payments && payments.length > 0) {
+                  const uniquePairs = {};
+                  payments.forEach(p => {
+                      if (p.groupId && p.groupName) {
+                          uniquePairs[p.groupId] = { id: p.groupId, name: p.groupName };
+                      }
+                  });
+                  groupList = Object.values(uniquePairs);
+              }
+
+              // Remove duplicates by name
+              const seen = new Set();
+              groupList = groupList.filter(g => {
+                 if (g.name && !seen.has(g.name)) {
+                     seen.add(g.name);
+                     return true;
+                 }
+                 return false;
+              });
+
+              if (groupList.length === 0) {
+                return (
+                  <p className="text-gray-500 text-center py-8 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center gap-2">
+                    <FiBook className="text-gray-400 w-8 h-8 opacity-50" />
+                    Guruhlarga biriktirilmagan yoki ma'lumot mavjud emas
+                  </p>
+                );
+              }
+
+              return (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {groupList.map((group, index) => {
+                  
+                  return (
+                    <Link
+                      key={group.id || index}
+                      to={group.id ? `/groups/${group.id}` : '#'}
+                      className={`flex flex-col p-4 rounded-xl border bg-white shadow-sm transition-all duration-300 relative overflow-hidden group hover:-translate-y-1 ${
+                        group.id ? 'hover:shadow-md hover:border-indigo-300 border-gray-100 cursor-pointer' : 'border-gray-100'
+                      }`}
+                    >
+                      <div className="w-1.5 h-full bg-indigo-500 absolute left-0 top-0 transition-colors group-hover:bg-purple-600"></div>
+                      <div className={`font-bold text-gray-900 pl-2 text-lg ${group.id ? 'group-hover:text-indigo-700 transition-colors' : ''}`}>
+                         {group.name || 'Nomsiz guruh'}
+                      </div>
+                      {(group.schedule || group.teacherName || group.status) && (
+                         <div className="text-sm text-gray-500 mt-3 pl-2 space-y-2">
+                           {group.teacherName && (
+                              <div className="flex items-center gap-2">
+                                <FiUser className="text-gray-400" /> {group.teacherName}
+                              </div>
+                           )}
+                           {group.schedule && (
+                              <div className="flex items-center gap-2 text-indigo-600 font-medium">
+                                <FiBook className="text-indigo-400" /> {group.schedule}
+                              </div>
+                           )}
+                         </div>
+                      )}
+                    </Link>
+                  )
+                })}
+              </div>
+            );
+            })()}
+          </div>
           {/* Payments Section - Admin and Teacher */}
           {canViewPayments && (
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">

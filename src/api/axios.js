@@ -2,17 +2,40 @@ import axios from 'axios';
 
 const api = axios.create({
   baseURL: "https://magister-production-a4a6.up.railway.app/api",
-  
   headers: {
     'Content-Type': 'application/json',
   },
 });
+
+function isTokenExpired(token) {
+  if (!token) return true;
+  try {
+    const payloadStart = token.indexOf('.') + 1;
+    const payloadEnd = token.indexOf('.', payloadStart);
+    if (payloadStart === 0 || payloadEnd === -1) return true;
+    const payload = token.substring(payloadStart, payloadEnd);
+    const decodedPayload = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
+    if (decodedPayload.exp) {
+      return (decodedPayload.exp * 1000) < Date.now();
+    }
+    return false;
+  } catch (e) {
+    return true;
+  }
+}
 
 // Request interceptor
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token');
     if (token && token !== 'undefined' && token !== 'null') {
+      if (isTokenExpired(token)) {
+        console.warn('Token expired before making request');
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        window.location.href = '/login';
+        return Promise.reject(new Error('Token expired'));
+      }
       config.headers.Authorization = `Bearer ${token}`;
     }
 
@@ -83,5 +106,4 @@ api.interceptors.response.use(
     return Promise.reject(error);
   }
 );
-
 export default api;
