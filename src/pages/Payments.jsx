@@ -79,6 +79,33 @@ const Payments = () => {
     enabled: isTeacher || isAdmin,
   });
 
+  // Fetch all groups and their students to properly map group names
+  const { data: allGroupsDetails = [] } = useQuery({
+    queryKey: ['allGroupsDetailsForPayments', user?.role],
+    queryFn: async () => {
+      const groupsRes = isAdmin ? await groupsApi.getAdminGroups() : await teachersApi.getMyGroups();
+      const groups = groupsRes.data || [];
+      const studentsPromises = groups.map(g => 
+         (isAdmin ? groupsApi.getGroupStudents(g.id) : teachersApi.getGroupStudents(g.id))
+         .then(res => ({ groupId: g.id, groupName: g.name, students: res.data || [] }))
+         .catch(() => ({ groupId: g.id, groupName: g.name, students: [] }))
+      );
+      return Promise.all(studentsPromises);
+    },
+    enabled: isTeacher || isAdmin,
+  });
+
+  const studentGroupsMap = useMemo(() => {
+    const map = {};
+    allGroupsDetails.forEach(g => {
+        g.students.forEach(s => {
+            if (!map[s.id]) map[s.id] = [];
+            if (!map[s.id].includes(g.groupName)) map[s.id].push(g.groupName);
+        });
+    });
+    return map;
+  }, [allGroupsDetails]);
+
   // 2. Data Processing for Teacher View (Student Status)
   const studentStatusList = useMemo(() => {
     if (isStudent) return [];
@@ -107,11 +134,20 @@ const Payments = () => {
       // Get the ID of the main payment for this month (if any) to allow editing/deleting
       const monthPayment = currentMonthPayments.length > 0 ? currentMonthPayments[0] : null;
 
-      const groupNames = student.groupName || student.groups?.map(g => g.name || g).join(', ') || '-';
+      // Accurately determine group names
+      let resolvedGroupNames = student.groupName || (student.groups?.length > 0 ? student.groups.map(g => g.name || g).join(', ') : null);
+      if (!resolvedGroupNames || resolvedGroupNames === '-') {
+         if (studentGroupsMap[student.id] && studentGroupsMap[student.id].length > 0) {
+             resolvedGroupNames = studentGroupsMap[student.id].join(', ');
+         } else {
+             const uniqueNames = [...new Set(studentPayments.filter(p => p.groupName).map(p => p.groupName))];
+             resolvedGroupNames = uniqueNames.length > 0 ? uniqueNames.join(', ') : '-';
+         }
+      }
 
       return {
         ...student,
-        groupNames,
+        groupNames: resolvedGroupNames,
         paidThisMonth,
         debt,
         status,
@@ -119,18 +155,22 @@ const Payments = () => {
         lastPaymentDate: studentPayments.length > 0 ? studentPayments[0].paymentDate : null
       };
     });
-  }, [myStudents, payments, isTeacher, selectedMonth]);
+  }, [myStudents, payments, isTeacher, isStudent, selectedMonth, studentGroupsMap]);
 
   const filteredData = useMemo(() => {
-    const searchLower = searchTerm.toLowerCase();
+    const searchTerms = searchTerm.toLowerCase().trim().split(/\s+/).filter(Boolean);
     const [yearStr, monthStr] = selectedMonth.split('-');
     const filterYear = parseInt(yearStr);
     const filterMonth = parseInt(monthStr) - 1;
 
     if ((isTeacher) || (isAdmin && viewMode === 'STATUS')) {
       return studentStatusList.filter(s => {
-        const matchesSearch = (s.fullName?.toLowerCase() || '').includes(searchLower) ||
-                              (s.phone?.toLowerCase() || '').includes(searchLower);
+        const matchesSearch = searchTerms.length === 0 || searchTerms.every(term => 
+              (s.fullName?.toLowerCase() || '').includes(term) ||
+              (s.phone?.toLowerCase() || '').includes(term) ||
+              (s.groupNames?.toLowerCase() || '').includes(term) ||
+              (s.email?.toLowerCase() || '').includes(term)
+        );
         const matchesStatus = selectedStatus === 'ALL' || s.status === selectedStatus;
         return matchesSearch && matchesStatus;
       });
@@ -140,10 +180,10 @@ const Payments = () => {
         const d = new Date(payment.paymentDate);
         const matchesMonth = d.getFullYear() === filterYear && d.getMonth() === filterMonth;
         
-        const matchesSearch = (
-          (payment.studentName?.toLowerCase() || '').includes(searchLower) ||
-          (payment.teacherName?.toLowerCase() || '').includes(searchLower) ||
-          (payment.groupName?.toLowerCase() || '').includes(searchLower)
+        const matchesSearch = searchTerms.length === 0 || searchTerms.every(term => 
+          (payment.studentName?.toLowerCase() || '').includes(term) ||
+          (payment.teacherName?.toLowerCase() || '').includes(term) ||
+          (payment.groupName?.toLowerCase() || '').includes(term)
         );
         
         let matchesStatus = true;

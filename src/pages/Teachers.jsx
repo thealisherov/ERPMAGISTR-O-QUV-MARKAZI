@@ -183,11 +183,15 @@ const Teachers = () => {
     setDeleteConfirm({ open: false, teacherId: null, teacherName: '' });
   };
 
+  const searchTerms = searchTerm.toLowerCase().trim().split(/\s+/).filter(Boolean);
   const filteredTeachers = teachers.filter(teacher =>
-    teacher.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    teacher.email?.toLowerCase().includes(searchTerm.toLowerCase())
+    searchTerms.length === 0 || searchTerms.every(term => 
+       teacher.fullName?.toLowerCase().includes(term) ||
+       teacher.email?.toLowerCase().includes(term) ||
+       teacher.phone?.toLowerCase().includes(term) ||
+       teacher.subject?.toLowerCase().includes(term)
+    )
   );
-
   return (
     <div className="p-4 sm:p-6 bg-gray-50 min-h-screen">
       <div className="mb-6 flex flex-col sm:flex-row justify-between items-center gap-4">

@@ -266,9 +266,13 @@ const Students = () => {
     setDeleteConfirm({ open: false, studentId: null, studentName: '' });
   };
 
+  const searchTerms = searchTerm.toLowerCase().trim().split(/\s+/).filter(Boolean);
   const filteredStudents = students.filter(student =>
-    student.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    student.email?.toLowerCase().includes(searchTerm.toLowerCase())
+    searchTerms.length === 0 || searchTerms.every(term => 
+       student.fullName?.toLowerCase().includes(term) ||
+       student.email?.toLowerCase().includes(term) ||
+       student.phone?.toLowerCase().includes(term)
+    )
   );
 
   return (

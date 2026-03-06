@@ -108,9 +108,13 @@ const Users = () => {
     }
   };
 
+  const searchTerms = searchTerm.toLowerCase().trim().split(/\s+/).filter(Boolean);
   const filteredUsers = (users || []).filter(user =>
-    user.fullName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    user.email?.toLowerCase().includes(searchTerm.toLowerCase())
+    searchTerms.length === 0 || searchTerms.every(term => 
+       user.fullName?.toLowerCase().includes(term) ||
+       user.email?.toLowerCase().includes(term) ||
+       user.phone?.toLowerCase().includes(term)
+    )
   );
 
   return (
