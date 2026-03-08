@@ -2,6 +2,7 @@ import { useParams, Link } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { studentsApi } from '../../api/students.api';
 import { teachersApi } from '../../api/teachers.api';
+import { groupsApi } from '../../api/groups.api';
 import { paymentsApi } from '../../api/payments.api';
 import { formatCurrency, formatDateTime } from '../../api/helpers';
 import { useAuth } from '../../hooks/useAuth';
@@ -13,15 +14,22 @@ import {
   FiMail,
   FiArrowLeft,
   FiAward,
-  FiUserCheck
+  FiUserCheck,
+  FiLoader
 } from 'react-icons/fi';
 
 /**
  * StudentDetails - Backend bilan 100% mos
  * 
  * Backend endpoints:
- * - GET /users/{id} - Get student by ID
+ * - GET /users/{id} - Get student by ID (faqat UserDTO qaytaradi: id, email, fullName, phone, role)
  * - GET /admin/payments/student/{id} - Get payments by student (Admin only)
+ * - GET /admin/groups yoki GET /groups - Barcha guruhlarni olish
+ * - GET /groups/{id}/students - Guruh studentlarini olish
+ * 
+ * MUHIM: GET /users/{id} guruh ma'lumotlarini QAYTARMAYDI!
+ * Shuning uchun o'quvchining guruhlarini aniqlash uchun barcha guruhlarni olib,
+ * har bir guruhning studentlarini tekshiramiz.
  */
 
 const StudentDetails = () => {
@@ -39,8 +47,6 @@ const StudentDetails = () => {
           const res = await teachersApi.getMyStudentById(id);
           return res.data;
         } catch (error) {
-           // Fallback if teacher endpoint fails or returns 404
-           // Maybe try generic endpoint or throw
            throw error; 
         }
       }
@@ -48,6 +54,61 @@ const StudentDetails = () => {
       return res.data;
     },
     enabled: !!id
+  });
+
+  // Fetch student's groups by checking all groups and their students
+  // Backend UserDTO da groups ma'lumotlari yo'q, shuning uchun alohida fetch qilamiz
+  const { data: studentGroups = [], isLoading: groupsLoading } = useQuery({
+    queryKey: ['studentGroups', id, user?.role],
+    queryFn: async () => {
+      try {
+        let allGroups = [];
+        
+        if (user?.role === 'TEACHER') {
+          // Teacher faqat o'z guruhlarini ko'ra oladi
+          const res = await teachersApi.getMyGroups();
+          allGroups = res.data;
+        } else if (user?.role === 'ADMIN') {
+          const res = await groupsApi.getAdminGroups();
+          allGroups = res.data;
+        } else {
+          const res = await groupsApi.getAll();
+          allGroups = res.data;
+        }
+
+        // Har bir guruhning studentlarini tekshirish
+        const studentId = Number(id);
+        const matchedGroups = [];
+        
+        // Parallel ravishda barcha guruhlarning studentlarini olamiz
+        const promises = allGroups.map(async (group) => {
+          try {
+            let studentsRes;
+            if (user?.role === 'TEACHER') {
+              studentsRes = await teachersApi.getGroupStudents(group.id);
+            } else {
+              studentsRes = await groupsApi.getGroupStudents(group.id);
+            }
+            const students = studentsRes.data;
+            const found = students.some(s => s.id === studentId);
+            if (found) {
+              return group; // GroupDTO: id, name, teacherName, schedule, status, etc.
+            }
+          } catch (err) {
+            console.warn(`Guruh #${group.id} studentlarini olishda xatolik:`, err);
+          }
+          return null;
+        });
+        
+        const results = await Promise.all(promises);
+        return results.filter(Boolean);
+      } catch (err) {
+        console.error('Guruhlarni yuklashda xatolik:', err);
+        return [];
+      }
+    },
+    enabled: !!id && !!user,
+    staleTime: 60000, // 1 minut cache
   });
 
   // Fetch payments by student (Admin or Teacher)
@@ -129,6 +190,12 @@ const StudentDetails = () => {
           <div className="mt-6 pt-6 border-t border-gray-200">
             <h3 className="text-sm font-semibold text-gray-700 mb-3">Statistika</h3>
             <div className="space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-600">Guruhlar soni:</span>
+                <span className="font-bold text-gray-900">
+                  {groupsLoading ? '...' : `${studentGroups.length} ta`}
+                </span>
+              </div>
               {canViewPayments && (
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600">To'lovlar soni:</span>
@@ -141,106 +208,63 @@ const StudentDetails = () => {
 
         {/* Content Area */}
         <div className="lg:col-span-2 space-y-6">
-          <pre className="text-xs bg-gray-100 p-2 hidden">{JSON.stringify(student, null, 2)}</pre>
-          
-          
-          {/* Groups Section */}
+          {/* Groups Section - Backend dan to'g'ridan-to'g'ri olinadi */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
               <FiBook className="text-indigo-600" />
               Guruhlari
+              {!groupsLoading && ` (${studentGroups.length})`}
             </h3>
             
-            {(() => {
-              // 1. Check student.groups (Object or array of strings)
-              let groupList = [];
-              if (student.groups && Array.isArray(student.groups) && student.groups.length > 0) {
-                groupList = student.groups.map(g => typeof g === 'string' ? { name: g } : g);
-              } 
-              // 2. Check student.groupName string
-              else if (student.groupName && typeof student.groupName === 'string') {
-                groupList = student.groupName.split(',').map(name => ({ name: name.trim() })).filter(g => g.name);
-              } 
-              // 3. Fallback to cached list
-              else {
-                const cachedStudents = queryClient.getQueryData(['students', user?.role]) || [];
-                const listStudent = cachedStudents.find(s => s.id === Number(id) || s.id === id);
-                if (listStudent) {
-                   if (listStudent.groups && Array.isArray(listStudent.groups) && listStudent.groups.length > 0) {
-                      groupList = listStudent.groups.map(g => typeof g === 'string' ? { name: g } : g);
-                   } else if (listStudent.groupName) {
-                      groupList = listStudent.groupName.split(',').map(name => ({ name: name.trim() })).filter(g => g.name);
-                   }
-                }
-              }
-
-              // 4. Last resort: Extract from payments
-              if (groupList.length === 0 && payments && payments.length > 0) {
-                  const uniquePairs = {};
-                  payments.forEach(p => {
-                      if (p.groupId && p.groupName) {
-                          uniquePairs[p.groupId] = { id: p.groupId, name: p.groupName };
-                      }
-                  });
-                  groupList = Object.values(uniquePairs);
-              }
-
-              // Remove duplicates by name
-              const seen = new Set();
-              groupList = groupList.filter(g => {
-                 if (g.name && !seen.has(g.name)) {
-                     seen.add(g.name);
-                     return true;
-                 }
-                 return false;
-              });
-
-              if (groupList.length === 0) {
-                return (
-                  <p className="text-gray-500 text-center py-8 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center gap-2">
-                    <FiBook className="text-gray-400 w-8 h-8 opacity-50" />
-                    Guruhlarga biriktirilmagan yoki ma'lumot mavjud emas
-                  </p>
-                );
-              }
-
-              return (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {groupList.map((group, index) => {
-                  
-                  return (
-                    <Link
-                      key={group.id || index}
-                      to={group.id ? `/groups/${group.id}` : '#'}
-                      className={`flex flex-col p-4 rounded-xl border bg-white shadow-sm transition-all duration-300 relative overflow-hidden group hover:-translate-y-1 ${
-                        group.id ? 'hover:shadow-md hover:border-indigo-300 border-gray-100 cursor-pointer' : 'border-gray-100'
-                      }`}
-                    >
-                      <div className="w-1.5 h-full bg-indigo-500 absolute left-0 top-0 transition-colors group-hover:bg-purple-600"></div>
-                      <div className={`font-bold text-gray-900 pl-2 text-lg ${group.id ? 'group-hover:text-indigo-700 transition-colors' : ''}`}>
-                         {group.name || 'Nomsiz guruh'}
-                      </div>
-                      {(group.schedule || group.teacherName || group.status) && (
-                         <div className="text-sm text-gray-500 mt-3 pl-2 space-y-2">
-                           {group.teacherName && (
-                              <div className="flex items-center gap-2">
-                                <FiUser className="text-gray-400" /> {group.teacherName}
-                              </div>
-                           )}
-                           {group.schedule && (
-                              <div className="flex items-center gap-2 text-indigo-600 font-medium">
-                                <FiBook className="text-indigo-400" /> {group.schedule}
-                              </div>
-                           )}
+            {groupsLoading ? (
+              <div className="text-center py-8 text-gray-500 flex flex-col items-center gap-2">
+                <FiLoader className="w-6 h-6 animate-spin text-indigo-500" />
+                <span>Guruhlar yuklanmoqda...</span>
+              </div>
+            ) : studentGroups.length === 0 ? (
+              <p className="text-gray-500 text-center py-8 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center gap-2">
+                <FiBook className="text-gray-400 w-8 h-8 opacity-50" />
+                Guruhlarga biriktirilmagan
+              </p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {studentGroups.map((group) => (
+                  <Link
+                    key={group.id}
+                    to={`/groups/${group.id}`}
+                    className="flex flex-col p-4 rounded-xl border bg-white shadow-sm transition-all duration-300 relative overflow-hidden group hover:-translate-y-1 hover:shadow-md hover:border-indigo-300 border-gray-100 cursor-pointer"
+                  >
+                    <div className="w-1.5 h-full bg-indigo-500 absolute left-0 top-0 transition-colors group-hover:bg-purple-600"></div>
+                    <div className="font-bold text-gray-900 pl-2 text-lg group-hover:text-indigo-700 transition-colors">
+                       {group.name || 'Nomsiz guruh'}
+                    </div>
+                    <div className="text-sm text-gray-500 mt-3 pl-2 space-y-2">
+                      {group.teacherName && (
+                         <div className="flex items-center gap-2">
+                           <FiUser className="text-gray-400" /> {group.teacherName}
                          </div>
                       )}
-                    </Link>
-                  )
-                })}
+                      {group.schedule && (
+                         <div className="flex items-center gap-2 text-indigo-600 font-medium">
+                           <FiBook className="text-indigo-400" /> {group.schedule}
+                         </div>
+                      )}
+                      {group.status && (
+                         <div className="flex items-center gap-2">
+                           <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                             group.status === 'ACTIVE' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                           }`}>
+                             {group.status}
+                           </span>
+                         </div>
+                      )}
+                    </div>
+                  </Link>
+                ))}
               </div>
-            );
-            })()}
+            )}
           </div>
+
           {/* Payments Section - Admin and Teacher */}
           {canViewPayments && (
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">

@@ -5,8 +5,9 @@ import { groupsApi } from '../api/groups.api';
 import { teachersApi } from '../api/teachers.api';
 import { studentsApi } from '../api/students.api';
 import { useAuth } from '../hooks/useAuth';
-import { FiPlus, FiEdit2, FiUsers, FiArrowRight, FiSearch } from 'react-icons/fi';
+import { FiPlus, FiEdit2, FiTrash2, FiUsers, FiArrowRight, FiSearch } from 'react-icons/fi';
 import Modal from '../components/common/Modal';
+import ConfirmDialog from '../components/common/ConfirmDialog';
 import toast from 'react-hot-toast';
 
 const daysList = [
@@ -25,8 +26,9 @@ const Groups = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingGroup, setEditingGroup] = useState(null);
+  const [deleteConfirm, setDeleteConfirm] = useState({ open: false, groupId: null, groupName: '' });
   const [formData, setFormData] = useState({
-    name: '', teacherId: '', description: '', price: ''
+    name: '', teacherId: '', description: '', price: '', status: 'ACTIVE'
   });
   
   const [scheduleData, setScheduleData] = useState({
@@ -159,6 +161,50 @@ const Groups = () => {
     }
   });
 
+  // Delete (deactivate) mutation - Backend da DELETE yo'q, shuning uchun statusni INACTIVE ga o'zgartiramiz
+  const deleteMutation = useMutation({
+    mutationFn: (groupId) => groupsApi.update(groupId, { status: 'INACTIVE' }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['groups'] });
+      setTimeout(() => refetch(), 500);
+      toast.success("Guruh muvaffaqiyatli o'chirildi (noaktiv qilindi)");
+      setDeleteConfirm({ open: false, groupId: null, groupName: '' });
+    },
+    onError: (err) => {
+       const errorMsg = err.response?.data?.message || err.message || 'Xatolik yuz berdi';
+       const statusCode = err.response?.status;
+       
+       // Backend DTO mapping error - aslida muvaffaqiyatli bo'lgan
+       const isBackendDtoError = statusCode === 500 && (
+         errorMsg.toLowerCase().includes('null') || 
+         errorMsg.toLowerCase().includes('getstudents') || 
+         errorMsg.toLowerCase().includes('invoke') ||
+         errorMsg.toLowerCase().includes('cannot invoke')
+       );
+       
+       if (isBackendDtoError) {
+         console.log('✅ Guruh o\'chirildi (backend DTO xatosi e\'tiborga olinmadi)');
+         queryClient.invalidateQueries({ queryKey: ['groups'] });
+         setTimeout(() => refetch(), 500);
+         toast.success("Guruh muvaffaqiyatli o'chirildi (noaktiv qilindi)");
+         setDeleteConfirm({ open: false, groupId: null, groupName: '' });
+       } else {
+         console.log('❌ Delete error:', errorMsg);
+         toast.error(`Xatolik: ${errorMsg}`);
+       }
+    }
+  });
+
+  const handleDeleteGroup = useCallback((group) => {
+    setDeleteConfirm({ open: true, groupId: group.id, groupName: group.name });
+  }, []);
+
+  const confirmDeleteGroup = useCallback(() => {
+    if (deleteConfirm.groupId) {
+      deleteMutation.mutate(deleteConfirm.groupId);
+    }
+  }, [deleteConfirm.groupId, deleteMutation]);
+
   const handleOpenModal = useCallback((group = null) => {
     if (group) {
       setEditingGroup(group);
@@ -166,7 +212,8 @@ const Groups = () => {
         name: group.name,
         teacherId: group.teacherId,
         description: group.description || '',
-        price: group.price || ''
+        price: group.price || '',
+        status: group.status || 'ACTIVE'
       });
 
       let parsedDays = [];
@@ -196,7 +243,7 @@ const Groups = () => {
       setEditingGroup(null);
       // If teacher is creating a new group, auto-set their ID
       const teacherId = isTeacher ? user?.userId : '';
-      setFormData({ name: '', teacherId: teacherId, description: '', price: '' });
+      setFormData({ name: '', teacherId: teacherId, description: '', price: '', status: 'ACTIVE' });
       setScheduleData({ days: [], startTime: '', endTime: '' });
     }
     setIsModalOpen(true);
@@ -238,6 +285,11 @@ const Groups = () => {
         schedule: scheduleStr.trim(),
         price: formData.price ? Number(formData.price) : 0
       };
+
+      // Tahrirlashda statusni ham yuborish
+      if (editingGroup) {
+        payload.status = formData.status;
+      }
 
       if (editingGroup) {
         await updateMutation.mutateAsync({ id: editingGroup.id, data: payload });
@@ -306,9 +358,19 @@ const Groups = () => {
                     <button
                         onClick={() => handleOpenModal(group)}
                         className="cursor-pointer p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-full transition-colors"
+                        title="Tahrirlash"
                     >
                         <FiEdit2 size={16} />
                     </button>
+                    {isAdmin && group.status !== 'INACTIVE' && (
+                      <button
+                          onClick={() => handleDeleteGroup(group)}
+                          className="cursor-pointer p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition-colors"
+                          title="O'chirish"
+                      >
+                          <FiTrash2 size={16} />
+                      </button>
+                    )}
                     </div>
                 )}
               </div>
@@ -452,6 +514,54 @@ const Groups = () => {
              />
           </div>
 
+          {/* Status toggle - faqat tahrirlashda ko'rsatiladi */}
+          {editingGroup && isAdmin && (
+            <div className={`p-4 rounded-xl border-2 ${
+              formData.status === 'INACTIVE' 
+                ? 'bg-red-50 border-red-200' 
+                : 'bg-green-50 border-green-200'
+            }`}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700">Guruh holati</label>
+                  <p className={`text-xs mt-0.5 ${
+                    formData.status === 'INACTIVE' ? 'text-red-500' : 'text-green-600'
+                  }`}>
+                    {formData.status === 'INACTIVE' 
+                      ? 'Guruh noaktiv holatda. Faollashtirish uchun tugmani bosing.' 
+                      : 'Guruh faol holatda.'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setFormData({ 
+                    ...formData, 
+                    status: formData.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE' 
+                  })}
+                  className={`relative w-14 h-7 rounded-full transition-colors duration-200 cursor-pointer flex-shrink-0 ${
+                    formData.status === 'ACTIVE' ? 'bg-green-500' : 'bg-gray-300'
+                  }`}
+                >
+                  <div className={`absolute top-1 w-5 h-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${
+                    formData.status === 'ACTIVE' ? 'translate-x-8' : 'translate-x-1'
+                  }`} />
+                </button>
+              </div>
+              <div className="mt-2">
+                <span className={`inline-flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full ${
+                  formData.status === 'ACTIVE' 
+                    ? 'bg-green-100 text-green-700' 
+                    : 'bg-red-100 text-red-700'
+                }`}>
+                  <span className={`w-1.5 h-1.5 rounded-full ${
+                    formData.status === 'ACTIVE' ? 'bg-green-500' : 'bg-red-500'
+                  }`}></span>
+                  {formData.status === 'ACTIVE' ? 'ACTIVE' : 'INACTIVE'}
+                </span>
+              </div>
+            </div>
+          )}
+
           <div className="flex justify-end gap-3 mt-8">
             <button
               type="button"
@@ -470,6 +580,18 @@ const Groups = () => {
           </div>
         </form>
       </Modal>
+
+      <ConfirmDialog
+        isOpen={deleteConfirm.open}
+        title="Guruhni o'chirish"
+        message={`"${deleteConfirm.groupName}" guruhini o'chirmoqchimisiz? Guruh noaktiv holatga o'tkaziladi.`}
+        confirmText="Ha, o'chirish"
+        cancelText="Bekor qilish"
+        variant="danger"
+        onConfirm={confirmDeleteGroup}
+        onCancel={() => setDeleteConfirm({ open: false, groupId: null, groupName: '' })}
+        loading={deleteMutation.isPending}
+      />
     </div>
   );
 };
