@@ -178,31 +178,29 @@ const TeacherDetails = () => {
                 <div className="text-center py-8 text-gray-500">Yuklanmoqda...</div>
               ) : payments.length > 0 ? (
                 <div className="overflow-x-auto">
-                  <table className="w-full text-left">
-                    <thead className="bg-gray-50 border-b">
-                      <tr>
-                        <th className="px-4 py-2 text-xs font-semibold text-gray-500">Talaba</th>
-                        <th className="px-4 py-2 text-xs font-semibold text-gray-500">Guruh</th>
-                        <th className="px-4 py-2 text-xs font-semibold text-gray-500">Summa</th>
-                        <th className="px-4 py-2 text-xs font-semibold text-gray-500">Sana</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {payments.slice(0, 10).map((payment) => (
-                        <tr key={payment.id} className="hover:bg-gray-50">
-                          <td className="px-4 py-3 text-sm font-medium text-gray-900">{payment.studentName}</td>
-                          <td className="px-4 py-3 text-sm text-gray-500">{payment.groupName}</td>
-                          <td className="px-4 py-3 text-sm font-bold text-green-600">{formatCurrency(payment.amount)}</td>
-                          <td className="px-4 py-3 text-sm text-gray-500">{formatDateTime(payment.paymentDate)}</td>
+                  <div className="max-h-[500px] overflow-y-auto rounded-lg border border-gray-100">
+                    <table className="w-full text-left min-w-[500px]">
+                      <thead className="bg-gray-50 border-b sticky top-0 z-10">
+                        <tr>
+                          <th className="px-4 py-2 text-xs font-semibold text-gray-500">Talaba</th>
+                          <th className="px-4 py-2 text-xs font-semibold text-gray-500">Guruh</th>
+                          <th className="px-4 py-2 text-xs font-semibold text-gray-500">Summa</th>
+                          <th className="px-4 py-2 text-xs font-semibold text-gray-500">Sana</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  {payments.length > 10 && (
-                    <p className="text-center text-gray-500 text-sm mt-4">
-                      va {payments.length - 10} ta boshqa to'lov...
-                    </p>
-                  )}
+                      </thead>
+                      <tbody className="divide-y">
+                        {payments.map((payment) => (
+                          <tr key={payment.id} className="hover:bg-gray-50">
+                            <td className="px-4 py-3 text-sm font-medium text-gray-900">{payment.studentName}</td>
+                            <td className="px-4 py-3 text-sm text-gray-500">{payment.groupName}</td>
+                            <td className="px-4 py-3 text-sm font-bold text-green-600">{formatCurrency(payment.amount)}</td>
+                            <td className="px-4 py-3 text-sm text-gray-500">{formatDateTime(payment.paymentDate)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="text-xs text-gray-400 text-right mt-2 pr-1">Jami: {payments.length} ta to'lov</p>
                 </div>
               ) : (
                 <p className="text-gray-500 text-center py-8">To'lovlar mavjud emas</p>
