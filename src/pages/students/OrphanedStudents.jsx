@@ -34,22 +34,43 @@ const OrphanedStudents = () => {
     }
   };
 
-  const handleEnroll = async (studentId, groupId) => {
+  const handleEnroll = async (studentId, groupId, setLoading) => {
     if (!groupId) {
       toast.error('Iltimos, guruh tanlang!');
       return;
     }
     
+    if (setLoading) setLoading(true);
     try {
       await groupsApi.addStudent(groupId, studentId);
-      toast.success('O\'quvchi guruhga muvaffaqiyatli qo\'shildi!');
+      toast.success("O'quvchi guruhga muvaffaqiyatli qo'shildi!");
+    } catch (error) {
+      console.error('Enrollment error:', error);
+      const msg = error.response?.data?.message || '';
+      // If student already exists in group, treat as success and refresh
+      if (
+        error.response?.status === 409 ||
+        msg.toLowerCase().includes('already') ||
+        msg.toLowerCase().includes('exists') ||
+        msg.toLowerCase().includes('mavjud')
+      ) {
+        toast.success("O'quvchi allaqachon guruhga qo'shilgan - ro'yxat yangilandi");
+      } else {
+        if (setLoading) setLoading(false);
+        toast.error(msg || "Guruhga qo'shishda xatolik!");
+        return;
+      }
+    }
+    // Always refresh the list after success or "already exists"
+    try {
       const studentsRes = await studentsApi.getOrphanedStudents();
       setOrphanedStudents(studentsRes.data);
       queryClient.invalidateQueries({ queryKey: ['dashboardStats'] });
-    } catch (error) {
-      console.error('Enrollment error:', error);
-      toast.error(error.response?.data?.message || 'Guruhga qo\'shishda xatolik!');
+      queryClient.invalidateQueries({ queryKey: ['groupStudents'] });
+    } catch (refreshError) {
+      console.error('Refresh error:', refreshError);
     }
+    if (setLoading) setLoading(false);
   };
 
   if (loading) {
@@ -144,6 +165,7 @@ const OrphanedStudents = () => {
 // Mobile Card Component
 const OrphanedStudentCard = ({ student, groups, onEnroll }) => {
   const [selectedGroupId, setSelectedGroupId] = useState('');
+  const [isEnrolling, setIsEnrolling] = useState(false);
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm hover:shadow-md transition-shadow">
@@ -180,15 +202,15 @@ const OrphanedStudentCard = ({ student, groups, onEnroll }) => {
           ))}
         </select>
         <button
-          onClick={() => onEnroll(student.id, selectedGroupId)}
-          disabled={!selectedGroupId}
+          onClick={() => onEnroll(student.id, selectedGroupId, setIsEnrolling)}
+          disabled={!selectedGroupId || isEnrolling}
           className={`cursor-pointer w-full py-2 px-4 text-sm font-medium rounded-lg text-white transition-all ${
-            !selectedGroupId 
+            !selectedGroupId || isEnrolling
               ? 'bg-gray-300 cursor-not-allowed' 
               : 'bg-blue-600 hover:bg-blue-700'
           }`}
         >
-          Guruhga Qo'shish
+          {isEnrolling ? "Qo'shilmoqda..." : "Guruhga Qo'shish"}
         </button>
       </div>
     </div>
@@ -198,6 +220,7 @@ const OrphanedStudentCard = ({ student, groups, onEnroll }) => {
 // Desktop Table Row
 const OrphanedStudentRow = ({ student, groups, onEnroll }) => {
   const [selectedGroupId, setSelectedGroupId] = useState('');
+  const [isEnrolling, setIsEnrolling] = useState(false);
 
   return (
     <tr className="hover:bg-gray-50 transition-colors">
@@ -225,15 +248,15 @@ const OrphanedStudentRow = ({ student, groups, onEnroll }) => {
       </td>
       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
         <button
-          onClick={() => onEnroll(student.id, selectedGroupId)}
-          disabled={!selectedGroupId}
+          onClick={() => onEnroll(student.id, selectedGroupId, setIsEnrolling)}
+          disabled={!selectedGroupId || isEnrolling}
           className={`cursor-pointer inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white transition-all
-            ${!selectedGroupId 
+            ${!selectedGroupId || isEnrolling
               ? 'bg-gray-300 cursor-not-allowed' 
               : 'bg-blue-600 hover:bg-blue-700 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500'
             }`}
         >
-          Guruhga Qo'shish
+          {isEnrolling ? "Qo'shilmoqda..." : "Guruhga Qo'shish"}
         </button>
       </td>
     </tr>

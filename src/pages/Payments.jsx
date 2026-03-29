@@ -4,13 +4,13 @@ import { paymentsApi } from '../api/payments.api';
 import { teachersApi } from '../api/teachers.api';
 import { studentsApi } from '../api/students.api';
 import { useAuth } from '../hooks/useAuth';
-import { FiPlus, FiSearch, FiEdit2, FiTrash2, FiUser, FiCalendar, FiDollarSign } from 'react-icons/fi';
+import { FiPlus, FiSearch, FiEdit2, FiTrash2, FiCalendar, FiFilter, FiX } from 'react-icons/fi';
 import { groupsApi } from '../api/groups.api';
 import Modal from '../components/common/Modal';
 import ConfirmDialog from '../components/common/ConfirmDialog';
 import toast from 'react-hot-toast';
 
-const MONTHLY_FEE = 320000; // Fixed monthly fee for now
+const MONTHLY_FEE = 320000;
 
 const formatCurrency = (amount) => {
   if (amount === undefined || amount === null) return '0 UZS';
@@ -37,27 +37,157 @@ const formatDateTime = (dateString) => {
   }).format(date);
 };
 
+// Get week boundaries (Mon-Sun)
+const getWeekRange = (offsetWeeks = 0) => {
+  const now = new Date();
+  const dayOfWeek = now.getDay(); // 0=Sun, 1=Mon ...
+  const diffToMon = (dayOfWeek === 0 ? -6 : 1 - dayOfWeek) + offsetWeeks * 7;
+  const mon = new Date(now);
+  mon.setDate(now.getDate() + diffToMon);
+  mon.setHours(0, 0, 0, 0);
+  const sun = new Date(mon);
+  sun.setDate(mon.getDate() + 6);
+  sun.setHours(23, 59, 59, 999);
+  return { from: mon, to: sun };
+};
+
+// ─────────────────────────── FILTER PANEL ───────────────────────────
+const DateFilterPanel = ({ filterMode, setFilterMode, selectedMonth, setSelectedMonth, dateRange, setDateRange }) => {
+  const tabs = [
+    { key: 'WEEKLY', label: 'Haftalik' },
+    { key: 'MONTHLY', label: 'Oylik' },
+    { key: 'CUSTOM', label: 'Sanadan-sanagacha' },
+  ];
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
+      {/* Tab switcher */}
+      <div className="flex gap-1 bg-gray-100 p-1 rounded-lg mb-4 w-fit">
+        {tabs.map(t => (
+          <button
+            key={t.key}
+            onClick={() => setFilterMode(t.key)}
+            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+              filterMode === t.key
+                ? 'bg-white shadow text-blue-600'
+                : 'text-gray-500 hover:text-gray-800'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Weekly picker */}
+      {filterMode === 'WEEKLY' && (
+        <div className="flex flex-wrap gap-2">
+          {[-2, -1, 0, 1].map(offset => {
+            const { from, to } = getWeekRange(offset);
+            const label = offset === 0 ? 'Bu hafta' : offset === -1 ? 'O\'tgan hafta' :
+              `${from.toLocaleDateString('uz-UZ', { day: '2-digit', month: 'short' })} – ${to.toLocaleDateString('uz-UZ', { day: '2-digit', month: 'short' })}`;
+            const isActive =
+              dateRange.from?.toDateString() === from.toDateString() &&
+              dateRange.to?.toDateString() === to.toDateString();
+            return (
+              <button
+                key={offset}
+                onClick={() => setDateRange({ from, to })}
+                className={`px-4 py-2 rounded-lg text-sm font-medium border transition-all ${
+                  isActive
+                    ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                    : 'bg-white text-gray-700 border-gray-200 hover:border-blue-300 hover:bg-blue-50'
+                }`}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Monthly picker */}
+      {filterMode === 'MONTHLY' && (
+        <div className="flex items-center gap-3">
+          <FiCalendar className="text-gray-400" />
+          <input
+            type="month"
+            value={selectedMonth}
+            onChange={(e) => setSelectedMonth(e.target.value)}
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white text-sm"
+          />
+          <span className="text-sm text-gray-500">
+            {new Date(selectedMonth + '-01').toLocaleDateString('uz-UZ', { year: 'numeric', month: 'long' })}
+          </span>
+        </div>
+      )}
+
+      {/* Custom date range */}
+      {filterMode === 'CUSTOM' && (
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2">
+            <label className="text-sm font-medium text-gray-600">Dan:</label>
+            <input
+              type="date"
+              value={dateRange.fromStr || ''}
+              onChange={(e) => {
+                const d = new Date(e.target.value);
+                d.setHours(0, 0, 0, 0);
+                setDateRange(prev => ({ ...prev, from: d, fromStr: e.target.value }));
+              }}
+              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white text-sm"
+            />
+          </div>
+          <span className="text-gray-400">→</span>
+          <div className="flex items-center gap-2">
+            <label className="text-sm font-medium text-gray-600">Gacha:</label>
+            <input
+              type="date"
+              value={dateRange.toStr || ''}
+              onChange={(e) => {
+                const d = new Date(e.target.value);
+                d.setHours(23, 59, 59, 999);
+                setDateRange(prev => ({ ...prev, to: d, toStr: e.target.value }));
+              }}
+              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white text-sm"
+            />
+          </div>
+          {(dateRange.fromStr || dateRange.toStr) && (
+            <button
+              onClick={() => setDateRange({ from: null, to: null, fromStr: '', toStr: '' })}
+              className="flex items-center gap-1 text-xs text-red-500 hover:text-red-700 px-2 py-1 rounded border border-red-200 hover:bg-red-50 transition-colors"
+            >
+              <FiX size={12} /> Tozalash
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const Payments = () => {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  
-  // Filter state for Month Selection
-  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM
-  const [selectedStatus, setSelectedStatus] = useState('ALL'); // ALL, PAID, PARTIAL, UNPAID
+  const [showFilter, setShowFilter] = useState(false);
+
+  // Filter state
+  const [filterMode, setFilterMode] = useState('MONTHLY'); // WEEKLY | MONTHLY | CUSTOM
+  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [dateRange, setDateRange] = useState({ from: null, to: null, fromStr: '', toStr: '' });
+  const [selectedStatus, setSelectedStatus] = useState('ALL');
 
   const isAdmin = user?.role === 'ADMIN';
   const isTeacher = user?.role === 'TEACHER';
   const isStudent = user?.role === 'STUDENT';
-  
+
   const [viewMode, setViewMode] = useState('STATUS'); // 'STATUS' | 'LOGS'
-  
+
   const [editingPayment, setEditingPayment] = useState(null);
   const [preSelectedStudent, setPreSelectedStudent] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState({ open: false, paymentId: null });
 
-  // 1. Fetch Data
+  // ── Fetch Data ──
   const { data: payments = [], isLoading: paymentsLoading } = useQuery({
     queryKey: ['payments', user?.role],
     queryFn: async () => {
@@ -66,7 +196,7 @@ const Payments = () => {
       return (await paymentsApi.getStudentPayments()).data;
     },
     enabled: !!user,
-    refetchInterval: 10000 // Real-time background data fetching
+    refetchInterval: 10000
   });
 
   const { data: myStudents = [], isLoading: studentsLoading } = useQuery({
@@ -79,16 +209,15 @@ const Payments = () => {
     enabled: isTeacher || isAdmin,
   });
 
-  // Fetch all groups and their students to properly map group names
   const { data: allGroupsDetails = [] } = useQuery({
     queryKey: ['allGroupsDetailsForPayments', user?.role],
     queryFn: async () => {
       const groupsRes = isAdmin ? await groupsApi.getAdminGroups() : await teachersApi.getMyGroups();
       const groups = groupsRes.data || [];
-      const studentsPromises = groups.map(g => 
-         (isAdmin ? groupsApi.getGroupStudents(g.id) : teachersApi.getGroupStudents(g.id))
-         .then(res => ({ groupId: g.id, groupName: g.name, students: res.data || [] }))
-         .catch(() => ({ groupId: g.id, groupName: g.name, students: [] }))
+      const studentsPromises = groups.map(g =>
+        (isAdmin ? groupsApi.getGroupStudents(g.id) : teachersApi.getGroupStudents(g.id))
+          .then(res => ({ groupId: g.id, groupName: g.name, students: res.data || [] }))
+          .catch(() => ({ groupId: g.id, groupName: g.name, students: [] }))
       );
       return Promise.all(studentsPromises);
     },
@@ -98,27 +227,42 @@ const Payments = () => {
   const studentGroupsMap = useMemo(() => {
     const map = {};
     allGroupsDetails.forEach(g => {
-        g.students.forEach(s => {
-            if (!map[s.id]) map[s.id] = [];
-            if (!map[s.id].includes(g.groupName)) map[s.id].push(g.groupName);
-        });
+      g.students.forEach(s => {
+        if (!map[s.id]) map[s.id] = [];
+        if (!map[s.id].includes(g.groupName)) map[s.id].push(g.groupName);
+      });
     });
     return map;
   }, [allGroupsDetails]);
 
-  // 2. Data Processing for Teacher View (Student Status)
+  // ── Compute effective date range for filter ──
+  const effectiveDateRange = useMemo(() => {
+    if (filterMode === 'WEEKLY') {
+      return dateRange.from && dateRange.to ? dateRange : getWeekRange(0);
+    }
+    if (filterMode === 'MONTHLY') {
+      const [y, m] = selectedMonth.split('-').map(Number);
+      const from = new Date(y, m - 1, 1, 0, 0, 0, 0);
+      const to = new Date(y, m, 0, 23, 59, 59, 999);
+      return { from, to };
+    }
+    // CUSTOM
+    return { from: dateRange.from, to: dateRange.to };
+  }, [filterMode, selectedMonth, dateRange]);
+
+  // ── Student status list (for STATUS view) ──
   const studentStatusList = useMemo(() => {
     if (isStudent) return [];
-
-    const [yearStr, monthStr] = selectedMonth.split('-');
-    const filterYear = parseInt(yearStr);
-    const filterMonth = parseInt(monthStr) - 1; // JS months are 0-indexed
+    const { from, to } = effectiveDateRange;
 
     return myStudents.map(student => {
-      // Find payments for this student
       const studentPayments = payments.filter(p => p.studentId === student.id);
-      
-      // Calculate total paid this month
+
+      // For STATUS view, always filter by selected month (not date range)
+      const [yearStr, monthStr] = selectedMonth.split('-');
+      const filterYear = parseInt(yearStr);
+      const filterMonth = parseInt(monthStr) - 1;
+
       const currentMonthPayments = studentPayments.filter(p => {
         const d = new Date(p.paymentDate);
         return d.getMonth() === filterMonth && d.getFullYear() === filterYear;
@@ -126,23 +270,21 @@ const Payments = () => {
 
       const paidThisMonth = currentMonthPayments.reduce((sum, p) => sum + Number(p.amount), 0);
       const debt = Math.max(0, MONTHLY_FEE - paidThisMonth);
-      
+
       let status = 'UNPAID';
       if (paidThisMonth >= MONTHLY_FEE) status = 'PAID';
       else if (paidThisMonth > 0) status = 'PARTIAL';
-      
-      // Get the ID of the main payment for this month (if any) to allow editing/deleting
+
       const monthPayment = currentMonthPayments.length > 0 ? currentMonthPayments[0] : null;
 
-      // Accurately determine group names
       let resolvedGroupNames = student.groupName || (student.groups?.length > 0 ? student.groups.map(g => g.name || g).join(', ') : null);
       if (!resolvedGroupNames || resolvedGroupNames === '-') {
-         if (studentGroupsMap[student.id] && studentGroupsMap[student.id].length > 0) {
-             resolvedGroupNames = studentGroupsMap[student.id].join(', ');
-         } else {
-             const uniqueNames = [...new Set(studentPayments.filter(p => p.groupName).map(p => p.groupName))];
-             resolvedGroupNames = uniqueNames.length > 0 ? uniqueNames.join(', ') : '-';
-         }
+        if (studentGroupsMap[student.id]?.length > 0) {
+          resolvedGroupNames = studentGroupsMap[student.id].join(', ');
+        } else {
+          const uniqueNames = [...new Set(studentPayments.filter(p => p.groupName).map(p => p.groupName))];
+          resolvedGroupNames = uniqueNames.length > 0 ? uniqueNames.join(', ') : '-';
+        }
       }
 
       return {
@@ -151,54 +293,63 @@ const Payments = () => {
         paidThisMonth,
         debt,
         status,
-        monthPayment, // The payment object for this month, if exists
+        monthPayment,
         lastPaymentDate: studentPayments.length > 0 ? studentPayments[0].paymentDate : null
       };
     });
-  }, [myStudents, payments, isTeacher, isStudent, selectedMonth, studentGroupsMap]);
+  }, [myStudents, payments, isStudent, selectedMonth, studentGroupsMap, effectiveDateRange]);
 
+  // ── Filtered data for current view ──
   const filteredData = useMemo(() => {
     const searchTerms = searchTerm.toLowerCase().trim().split(/\s+/).filter(Boolean);
-    const [yearStr, monthStr] = selectedMonth.split('-');
-    const filterYear = parseInt(yearStr);
-    const filterMonth = parseInt(monthStr) - 1;
 
     if ((isTeacher) || (isAdmin && viewMode === 'STATUS')) {
       return studentStatusList.filter(s => {
-        const matchesSearch = searchTerms.length === 0 || searchTerms.every(term => 
-              (s.fullName?.toLowerCase() || '').includes(term) ||
-              (s.phone?.toLowerCase() || '').includes(term) ||
-              (s.groupNames?.toLowerCase() || '').includes(term) ||
-              (s.email?.toLowerCase() || '').includes(term)
+        const matchesSearch = searchTerms.length === 0 || searchTerms.every(term =>
+          (s.fullName?.toLowerCase() || '').includes(term) ||
+          (s.phone?.toLowerCase() || '').includes(term) ||
+          (s.groupNames?.toLowerCase() || '').includes(term) ||
+          (s.email?.toLowerCase() || '').includes(term)
         );
         const matchesStatus = selectedStatus === 'ALL' || s.status === selectedStatus;
         return matchesSearch && matchesStatus;
       });
     }
-    
-    return payments.filter(payment => {
-        const d = new Date(payment.paymentDate);
-        const matchesMonth = d.getFullYear() === filterYear && d.getMonth() === filterMonth;
-        
-        const matchesSearch = searchTerms.length === 0 || searchTerms.every(term => 
-          (payment.studentName?.toLowerCase() || '').includes(term) ||
-          (payment.teacherName?.toLowerCase() || '').includes(term) ||
-          (payment.groupName?.toLowerCase() || '').includes(term)
-        );
-        
-        let matchesStatus = true;
-        if (selectedStatus !== 'ALL') {
-             // For individual payments, if amount >= MONTHLY_FEE it's PAID, else PARTIAL
-             const pStatus = Number(payment.amount) >= MONTHLY_FEE ? 'PAID' : 'PARTIAL';
-             // UNPAID payments don't exist in logs (since they are logs of actual payments)
-             matchesStatus = (pStatus === selectedStatus);
-        }
-        
-        return matchesMonth && matchesSearch && matchesStatus;
-    });
-  }, [searchTerm, isTeacher, studentStatusList, payments, selectedMonth, selectedStatus, isAdmin, viewMode]);
 
-  // Generators
+    // LOGS view: filter by date range
+    return payments.filter(payment => {
+      const d = new Date(payment.paymentDate);
+
+      // Apply date range filter if set
+      let matchesDate = true;
+      const { from, to } = effectiveDateRange;
+      if (from && to) {
+        matchesDate = d >= from && d <= to;
+      }
+
+      const matchesSearch = searchTerms.length === 0 || searchTerms.every(term =>
+        (payment.studentName?.toLowerCase() || '').includes(term) ||
+        (payment.teacherName?.toLowerCase() || '').includes(term) ||
+        (payment.groupName?.toLowerCase() || '').includes(term)
+      );
+
+      let matchesStatus = true;
+      if (selectedStatus !== 'ALL') {
+        const pStatus = Number(payment.amount) >= MONTHLY_FEE ? 'PAID' : 'PARTIAL';
+        matchesStatus = pStatus === selectedStatus;
+      }
+
+      return matchesDate && matchesSearch && matchesStatus;
+    });
+  }, [searchTerm, isTeacher, studentStatusList, payments, selectedStatus, isAdmin, viewMode, effectiveDateRange]);
+
+  // ── Summary stats for LOGS view ──
+  const logsSummary = useMemo(() => {
+    if (viewMode !== 'LOGS' && !isStudent) return null;
+    const total = filteredData.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+    return { count: filteredData.length, total };
+  }, [filteredData, viewMode, isStudent]);
+
   const handleOpenModal = () => {
     setEditingPayment(null);
     setPreSelectedStudent(null);
@@ -228,7 +379,7 @@ const Payments = () => {
       toast.success("To'lov o'chirildi");
       setDeleteConfirm({ open: false, paymentId: null });
     },
-    onError: (error) => {
+    onError: () => {
       toast.error("O'chirishda xatolik");
     },
   });
@@ -237,9 +388,12 @@ const Payments = () => {
     return <div className="text-center py-12 text-gray-500">Yuklanmoqda...</div>;
   }
 
+  const showStatusView = isTeacher || (isAdmin && viewMode === 'STATUS');
+
   return (
     <div className="p-4 sm:p-6">
       <div className="flex flex-col gap-4 sm:gap-6 mb-6">
+        {/* Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold text-gray-800">To'lovlar</h1>
@@ -247,69 +401,128 @@ const Payments = () => {
               {isTeacher ? "O'quvchilar to'lov holati" : isAdmin ? "To'lovlarni boshqarish" : "Mening to'lovlarim"}
             </p>
           </div>
-          {isAdmin && (
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            {/* Filter toggle */}
             <button
-              onClick={handleOpenModal}
-              className="cursor-pointer bg-blue-600 text-white px-4 py-2.5 rounded-lg flex items-center gap-2 hover:bg-blue-700 transition-colors w-full sm:w-auto justify-center font-medium"
+              onClick={() => setShowFilter(f => !f)}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-lg border text-sm font-medium transition-all ${
+                showFilter
+                  ? 'bg-blue-600 text-white border-blue-600 shadow'
+                  : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+              }`}
             >
-              <FiPlus /> Yangi To'lov
+              <FiFilter size={16} />
+              <span className="hidden sm:inline">Filter</span>
+              {/* Active filter indicator */}
+              {(filterMode !== 'MONTHLY' || dateRange.from) && (
+                <span className="w-2 h-2 rounded-full bg-orange-400 inline-block" />
+              )}
             </button>
+            {isAdmin && (
+              <button
+                onClick={handleOpenModal}
+                className="cursor-pointer bg-blue-600 text-white px-4 py-2.5 rounded-lg flex items-center gap-2 hover:bg-blue-700 transition-colors flex-1 sm:flex-none justify-center font-medium"
+              >
+                <FiPlus /> Yangi To'lov
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Filter panel */}
+        {showFilter && (
+          <DateFilterPanel
+            filterMode={filterMode}
+            setFilterMode={(mode) => {
+              setFilterMode(mode);
+              if (mode === 'WEEKLY') setDateRange(getWeekRange(0));
+              if (mode === 'CUSTOM') setDateRange({ from: null, to: null, fromStr: '', toStr: '' });
+            }}
+            selectedMonth={selectedMonth}
+            setSelectedMonth={setSelectedMonth}
+            dateRange={dateRange}
+            setDateRange={setDateRange}
+          />
+        )}
+
+        {/* Controls row */}
+        <div className="flex flex-col sm:flex-row gap-3">
+          {isAdmin && (
+            <div className="flex bg-gray-100 p-1 rounded-lg">
+              <button
+                onClick={() => setViewMode('STATUS')}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${viewMode === 'STATUS' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-600 hover:text-gray-900'}`}
+              >Holat</button>
+              <button
+                onClick={() => setViewMode('LOGS')}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${viewMode === 'LOGS' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-600 hover:text-gray-900'}`}
+              >Tarix</button>
+            </div>
+          )}
+          <div className="relative flex-1">
+            <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              placeholder={showStatusView ? "O'quvchi qidirish..." : "Qidirish..."}
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+          {showStatusView && (
+            <select
+              value={selectedStatus}
+              onChange={(e) => setSelectedStatus(e.target.value)}
+              className="px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white min-w-[150px]"
+            >
+              <option value="ALL">Barcha statuslar</option>
+              <option value="PAID">To'liq to'langan</option>
+              <option value="PARTIAL">Qisman to'langan</option>
+              <option value="UNPAID">To'lanmagan</option>
+            </select>
+          )}
+          {/* Month selector for STATUS view when filter panel is closed */}
+          {showStatusView && !showFilter && (
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <FiCalendar className="text-gray-400" />
+              </div>
+              <input
+                type="month"
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+              />
+            </div>
           )}
         </div>
 
-        <div className="flex flex-col sm:flex-row gap-3">
-            {isAdmin && (
-              <div className="flex bg-gray-100 p-1 rounded-lg">
-                  <button 
-                    onClick={() => setViewMode('STATUS')}
-                    className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${viewMode === 'STATUS' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-600 hover:text-gray-900'}`}
-                  >Holat</button>
-                  <button 
-                    onClick={() => setViewMode('LOGS')}
-                    className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${viewMode === 'LOGS' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-600 hover:text-gray-900'}`}
-                  >Tarix</button>
+        {/* LOGS summary bar */}
+        {logsSummary && viewMode === 'LOGS' && (
+          <div className="flex flex-wrap gap-3">
+            <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 text-blue-700 text-sm font-medium px-4 py-2 rounded-lg">
+              <span>Jami to'lovlar:</span>
+              <span className="font-bold">{logsSummary.count} ta</span>
+            </div>
+            <div className="flex items-center gap-2 bg-green-50 border border-green-200 text-green-700 text-sm font-medium px-4 py-2 rounded-lg">
+              <span>Jami summa:</span>
+              <span className="font-bold">{formatCurrency(logsSummary.total)}</span>
+            </div>
+            {effectiveDateRange.from && effectiveDateRange.to && (
+              <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 text-gray-600 text-sm px-4 py-2 rounded-lg">
+                <FiCalendar size={14} />
+                <span>
+                  {effectiveDateRange.from.toLocaleDateString('uz-UZ', { day: '2-digit', month: 'short', year: 'numeric' })} –{' '}
+                  {effectiveDateRange.to.toLocaleDateString('uz-UZ', { day: '2-digit', month: 'short', year: 'numeric' })}
+                </span>
               </div>
             )}
-            <div className="relative flex-1">
-              <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-              <input
-                type="text"
-                placeholder={isTeacher || (isAdmin && viewMode === 'STATUS') ? "O'quvchi qidirish..." : "Qidirish..."}
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
-            {((isTeacher) || (isAdmin && viewMode === 'STATUS')) && (
-                <>
-                  <select
-                      value={selectedStatus}
-                      onChange={(e) => setSelectedStatus(e.target.value)}
-                      className="px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white min-w-[140px]"
-                  >
-                      <option value="ALL">Barcha statuslar</option>
-                      <option value="PAID">To'liq to'langan</option>
-                      <option value="PARTIAL">Qisman to'langan</option>
-                      <option value="UNPAID">To'lanmagan</option>
-                  </select>
-                  <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                          <FiCalendar className="text-gray-400" />
-                      </div>
-                      <input
-                          type="month"
-                          value={selectedMonth}
-                          onChange={(e) => setSelectedMonth(e.target.value)}
-                          className="pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white"
-                      />
-                  </div>
-                </>
-            )}
-        </div>
+          </div>
+        )}
       </div>
 
-      {(isTeacher || (isAdmin && viewMode === 'STATUS')) ? (
-        // TEACHER / ADMIN STATUS VIEW: Student Status List with Month Filter
+      {/* ── STATUS VIEW ── */}
+      {showStatusView ? (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left min-w-[900px]">
@@ -334,13 +547,13 @@ const Payments = () => {
                     <tr key={student.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-xs shrink-0">
-                                {student.fullName?.charAt(0)}
-                            </div>
-                            <div>
-                                <div className="font-semibold text-gray-900">{student.fullName}</div>
-                                <div className="text-xs text-gray-500">{student.phone}</div>
-                            </div>
+                          <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-xs shrink-0">
+                            {student.fullName?.charAt(0)}
+                          </div>
+                          <div>
+                            <div className="font-semibold text-gray-900">{student.fullName}</div>
+                            <div className="text-xs text-gray-500">{student.phone}</div>
+                          </div>
                         </div>
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-500">{student.phone}</td>
@@ -349,7 +562,7 @@ const Payments = () => {
                       <td className="px-6 py-4 text-sm text-red-600 font-bold">{formatCurrency(student.debt)}</td>
                       <td className="px-6 py-4">
                         <span className={`px-2 py-1 rounded text-xs font-medium ${
-                          student.status === 'PAID' ? 'bg-green-100 text-green-700' : 
+                          student.status === 'PAID' ? 'bg-green-100 text-green-700' :
                           student.status === 'PARTIAL' ? 'bg-yellow-100 text-yellow-700' :
                           'bg-red-100 text-red-700'
                         }`}>
@@ -357,37 +570,37 @@ const Payments = () => {
                         </span>
                       </td>
                       <td className="px-6 py-4 text-right">
-                         {student.status === 'PAID' && student.monthPayment ? (
-                             <div className="flex items-center justify-end gap-2">
-                                 {isAdmin && (
-                                     <>
-                                         <button
-                                             onClick={() => handleEditPayment(student.monthPayment)}
-                                             className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                                             title="Tahrirlash"
-                                         >
-                                             <FiEdit2 size={16} />
-                                         </button>
-                                         <button
-                                             onClick={() => handleDeletePayment(student.monthPayment.id)}
-                                             className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                             title="O'chirish"
-                                         >
-                                             <FiTrash2 size={16} />
-                                         </button>
-                                     </>
-                                 )}
-                             </div>
-                         ) : (
-                             isAdmin && (
-                                 <button
-                                   onClick={() => handlePayForStudent(student)}
-                                   className="bg-blue-600 text-white px-3 py-1.5 rounded text-sm hover:bg-blue-700 transition-colors shadow-sm cursor-pointer"
-                                 >
-                                   To'lov
-                                 </button>
-                             )
-                         )}
+                        {student.status === 'PAID' && student.monthPayment ? (
+                          <div className="flex items-center justify-end gap-2">
+                            {isAdmin && (
+                              <>
+                                <button
+                                  onClick={() => handleEditPayment(student.monthPayment)}
+                                  className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                  title="Tahrirlash"
+                                >
+                                  <FiEdit2 size={16} />
+                                </button>
+                                <button
+                                  onClick={() => handleDeletePayment(student.monthPayment.id)}
+                                  className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                  title="O'chirish"
+                                >
+                                  <FiTrash2 size={16} />
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        ) : (
+                          isAdmin && (
+                            <button
+                              onClick={() => handlePayForStudent(student)}
+                              className="bg-blue-600 text-white px-3 py-1.5 rounded text-sm hover:bg-blue-700 transition-colors shadow-sm cursor-pointer"
+                            >
+                              To'lov
+                            </button>
+                          )
+                        )}
                       </td>
                     </tr>
                   ))
@@ -397,26 +610,26 @@ const Payments = () => {
           </div>
         </div>
       ) : (
-        // ADMIN / STUDENT VIEW: Payments Log
+        /* ── LOGS VIEW ── */
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-             <div className="overflow-x-auto">
-              <table className="w-full text-left min-w-[800px]">
-                <thead className="bg-gray-50 border-b border-gray-200">
-                  <tr>
-                    <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Talaba</th>
-                    <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Guruh</th>
-                    <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Summa</th>
-                    <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Usul</th>
-                    <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">To'lov Oyi</th>
-                    <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">To'langan Vaqt</th>
-                    {isAdmin && <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase text-right">Amallar</th>}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {filteredData.length === 0 ? (
-                     <tr><td colSpan="7" className="text-center py-8 text-gray-500">To'lovlar topilmadi</td></tr>
-                  ) : (
-                    filteredData.map((payment) => (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left min-w-[800px]">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Talaba</th>
+                  <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Guruh</th>
+                  <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Summa</th>
+                  <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Usul</th>
+                  <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">To'lov Oyi</th>
+                  <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">Hujjat Sanasi</th>
+                  {isAdmin && <th className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase text-right">Amallar</th>}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {filteredData.length === 0 ? (
+                  <tr><td colSpan="7" className="text-center py-8 text-gray-500">To'lovlar topilmadi</td></tr>
+                ) : (
+                  filteredData.map((payment) => (
                     <tr key={payment.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 text-sm font-medium text-gray-900">{payment.studentName}</td>
                       <td className="px-6 py-4 text-sm text-gray-500">{payment.groupName}</td>
@@ -441,11 +654,11 @@ const Payments = () => {
                         </td>
                       )}
                     </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -472,22 +685,37 @@ const Payments = () => {
   );
 };
 
-// Payment Modal Component
+// ─────────────────────── PAYMENT MODAL ───────────────────────
 const PaymentModal = ({ isOpen, onClose, payment = null, preSelectedStudent = null }) => {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
 
+  // ── FIX #3: Separate paymentMonth from documentDate ──
+  // paymentMonth: which month this payment is for (YYYY-MM)
+  // documentDate: the actual timestamp of the document (datetime-local)
+  const getInitialPaymentMonth = () => {
+    if (payment?.paymentDate) return new Date(payment.paymentDate).toISOString().slice(0, 7);
+    return new Date().toISOString().slice(0, 7);
+  };
+
+  const getInitialDocumentDate = () => {
+    if (payment?.createdAt) return new Date(payment.createdAt).toISOString().slice(0, 16);
+    if (payment?.paymentDate) return new Date(payment.paymentDate).toISOString().slice(0, 16);
+    return new Date().toISOString().slice(0, 16);
+  };
+
+  const [paymentMonth, setPaymentMonth] = useState(getInitialPaymentMonth);
+  const [documentDate, setDocumentDate] = useState(getInitialDocumentDate);
+
   const [formData, setFormData] = useState({
     studentId: payment?.studentId || preSelectedStudent?.id || '',
     groupId: payment?.groupId || '',
     amount: payment?.amount || MONTHLY_FEE,
-    paymentDate: payment?.paymentDate ? new Date(payment.paymentDate).toISOString().slice(0, 16) : new Date().toISOString().slice(0, 16),
     method: payment?.method || 'CASH',
     notes: payment?.notes || '',
   });
 
-  // Fetch groups
   const { data: groups = [] } = useQuery({
     queryKey: ['payment-modal-groups', user?.role],
     queryFn: async () => {
@@ -497,7 +725,6 @@ const PaymentModal = ({ isOpen, onClose, payment = null, preSelectedStudent = nu
     enabled: isOpen,
   });
 
-  // Fetch students for selected group
   const { data: students = [] } = useQuery({
     queryKey: ['payment-modal-students', formData.groupId],
     queryFn: async () => {
@@ -529,16 +756,25 @@ const PaymentModal = ({ isOpen, onClose, payment = null, preSelectedStudent = nu
       toast.error("Ma'lumotlar to'liq emas");
       return;
     }
+    // paymentDate = first day of the selected month (for which month it is)
+    // createdAt / documentDate = the actual document timestamp
+    const paymentDate = `${paymentMonth}-01T${documentDate.slice(11, 16) || '12:00'}`;
     mutation.mutate({
       ...formData,
       studentId: Number(formData.studentId),
       groupId: Number(formData.groupId),
       amount: parseFloat(formData.amount),
+      paymentDate,        // which month
+      createdAt: documentDate, // actual document time (if backend supports it)
     });
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={payment ? "To'lovni tahrirlash" : preSelectedStudent ? `${preSelectedStudent.fullName} uchun to'lov` : "Yangi to'lov"}>
+    <Modal isOpen={isOpen} onClose={onClose} title={
+      payment ? "To'lovni tahrirlash"
+      : preSelectedStudent ? `${preSelectedStudent.fullName} uchun to'lov`
+      : "Yangi to'lov"
+    }>
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Guruh</label>
@@ -556,33 +792,33 @@ const PaymentModal = ({ isOpen, onClose, payment = null, preSelectedStudent = nu
         </div>
 
         <div>
-           <label className="block text-sm font-medium text-gray-700 mb-1">Talaba</label>
-           <select
-             required
-             disabled={!formData.groupId && !preSelectedStudent} 
-             className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
-             value={formData.studentId}
-             onChange={(e) => setFormData({ ...formData, studentId: e.target.value })}
-           >
-             <option value="">Tanlang</option>
-             {students.map(s => (
-               <option key={s.id} value={s.id}>{s.fullName}</option>
-             ))}
-           </select>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Talaba</label>
+          <select
+            required
+            disabled={!formData.groupId && !preSelectedStudent}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
+            value={formData.studentId}
+            onChange={(e) => setFormData({ ...formData, studentId: e.target.value })}
+          >
+            <option value="">Tanlang</option>
+            {students.map(s => (
+              <option key={s.id} value={s.id}>{s.fullName}</option>
+            ))}
+          </select>
         </div>
 
         <div>
-           <label className="block text-sm font-medium text-gray-700 mb-1">Summa (UZS)</label>
-           <input 
-             type="number"
-             required
-             className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
-             value={formData.amount}
-             onChange={(e) => setFormData({...formData, amount: e.target.value})}
-           />
+          <label className="block text-sm font-medium text-gray-700 mb-1">Summa (UZS)</label>
+          <input
+            type="number"
+            required
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
+            value={formData.amount}
+            onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+          />
         </div>
-        
-        {/* Methods */}
+
+        {/* Payment method */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">To'lov usuli</label>
           <div className="flex gap-4">
@@ -590,7 +826,7 @@ const PaymentModal = ({ isOpen, onClose, payment = null, preSelectedStudent = nu
               <button
                 key={m}
                 type="button"
-                onClick={() => setFormData({...formData, method: m})}
+                onClick={() => setFormData({ ...formData, method: m })}
                 className={`flex-1 py-2 rounded-lg border text-sm font-medium transition-colors ${
                   formData.method === m ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 hover:bg-gray-50'
                 }`}
@@ -601,31 +837,34 @@ const PaymentModal = ({ isOpen, onClose, payment = null, preSelectedStudent = nu
           </div>
         </div>
 
+        {/* ── FIX #3: Two independent date fields ── */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-               <label className="block text-sm font-medium text-gray-700 mb-1">To'lov qaysi oy uchun?</label>
-               <input 
-                 type="month"
-                 required
-                 className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
-                 value={formData.paymentDate.slice(0, 7)}
-                 onChange={(e) => {
-                     const newMonth = e.target.value;
-                     const timePart = formData.paymentDate.slice(11, 16) || "12:00";
-                     setFormData({...formData, paymentDate: `${newMonth}-01T${timePart}`});
-                 }}
-               />
-            </div>
-            <div>
-               <label className="block text-sm font-medium text-gray-700 mb-1">Hujjat sanasi va vaqti</label>
-               <input 
-                 type="datetime-local"
-                 required
-                 className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
-                 value={formData.paymentDate}
-                 onChange={(e) => setFormData({...formData, paymentDate: e.target.value})}
-               />
-            </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              To'lov qaysi oy uchun?
+            </label>
+            <input
+              type="month"
+              required
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
+              value={paymentMonth}
+              onChange={(e) => setPaymentMonth(e.target.value)}
+              // ── KEY FIX: changing this does NOT touch documentDate ──
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Hujjat sanasi va vaqti
+            </label>
+            <input
+              type="datetime-local"
+              required
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500"
+              value={documentDate}
+              onChange={(e) => setDocumentDate(e.target.value)}
+              // ── KEY FIX: changing this does NOT touch paymentMonth ──
+            />
+          </div>
         </div>
 
         <div>
@@ -640,10 +879,13 @@ const PaymentModal = ({ isOpen, onClose, payment = null, preSelectedStudent = nu
         </div>
 
         <div className="flex justify-end gap-3 mt-6">
-           <button type="button" onClick={onClose} className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors">Bekor qilish</button>
-           <button type="submit" disabled={mutation.isPending} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50">{mutation.isPending ? 'Saqlanmoqda...' : 'Saqlash'}</button>
+          <button type="button" onClick={onClose} className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors">
+            Bekor qilish
+          </button>
+          <button type="submit" disabled={mutation.isPending} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50">
+            {mutation.isPending ? 'Saqlanmoqda...' : 'Saqlash'}
+          </button>
         </div>
-
       </form>
     </Modal>
   );

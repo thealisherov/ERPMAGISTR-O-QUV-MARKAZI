@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { groupsApi } from '../../api/groups.api';
@@ -51,6 +51,12 @@ const GroupDetails = () => {
   const [coinAmount, setCoinAmount] = useState(10);
   const [coinReason, setCoinReason] = useState('');
 
+  // Leaderboard filter state
+  const [lbFilterMode, setLbFilterMode] = useState('ALL'); // ALL | MONTH | WEEK | CUSTOM
+  const [lbMonth, setLbMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [lbDateFrom, setLbDateFrom] = useState('');
+  const [lbDateTo, setLbDateTo] = useState('');
+
   // Fetch Group
   const { data: group, isLoading: groupLoading } = useQuery({
     queryKey: ['group', id, user?.role],
@@ -88,23 +94,78 @@ const GroupDetails = () => {
     enabled: !!id
   });
 
-  // Fetch Leaderboard (Coin ranking)
+  // Fetch Leaderboard - all-time (Coin ranking)
   const { data: leaderboard = [] } = useQuery({
     queryKey: ['leaderboard', id],
     queryFn: async () => {
       try {
-        const res = isStudent 
+        const res = isStudent
           ? await coinsApi.getStudentGroupLeaderboard(id)
           : await coinsApi.getGroupLeaderboard(id);
         return res.data;
       } catch (error) {
-        console.warn("Leaderboard fetching failed:", error);
+        console.warn('Leaderboard fetching failed:', error);
         return [];
       }
     },
     enabled: !!id,
     retry: false
   });
+
+  // Fetch detailed coins for this group (for filtered leaderboard)
+  const { data: groupCoinDetails = [] } = useQuery({
+    queryKey: ['groupCoinDetails', id],
+    queryFn: async () => {
+      try {
+        const res = await coinsApi.getByGroup(id);
+        return res.data || [];
+      } catch {
+        return [];
+      }
+    },
+    enabled: !!id && !isStudent,
+    retry: false
+  });
+
+  // Compute filtered leaderboard based on selected period
+  const filteredLeaderboard = useMemo(() => {
+    if (lbFilterMode === 'ALL') return leaderboard;
+
+    // Determine date range
+    let from = null, to = null;
+    const now = new Date();
+    if (lbFilterMode === 'MONTH') {
+      const [y, m] = lbMonth.split('-').map(Number);
+      from = new Date(y, m - 1, 1, 0, 0, 0, 0);
+      to = new Date(y, m, 0, 23, 59, 59, 999);
+    } else if (lbFilterMode === 'WEEK') {
+      const dow = now.getDay();
+      const diff = dow === 0 ? -6 : 1 - dow;
+      from = new Date(now); from.setDate(now.getDate() + diff); from.setHours(0,0,0,0);
+      to = new Date(from); to.setDate(from.getDate() + 6); to.setHours(23,59,59,999);
+    } else if (lbFilterMode === 'CUSTOM') {
+      if (lbDateFrom) { from = new Date(lbDateFrom); from.setHours(0,0,0,0); }
+      if (lbDateTo)   { to = new Date(lbDateTo);   to.setHours(23,59,59,999); }
+    }
+
+    // Aggregate coins by student for this period
+    const map = {};
+    groupCoinDetails.forEach(coin => {
+      const d = new Date(coin.awardedDate || coin.createdAt);
+      if (from && d < from) return;
+      if (to && d > to) return;
+      const sid = coin.studentId;
+      if (!map[sid]) map[sid] = { studentId: sid, studentName: coin.studentName, totalCoins: 0 };
+      map[sid].totalCoins += Number(coin.amount || 0);
+    });
+
+    // If no detail data, fall back to leaderboard but can't filter - show all
+    if (groupCoinDetails.length === 0) return leaderboard;
+
+    return Object.values(map)
+      .filter(e => e.totalCoins > 0)
+      .sort((a, b) => b.totalCoins - a.totalCoins);
+  }, [lbFilterMode, leaderboard, groupCoinDetails, lbMonth, lbDateFrom, lbDateTo]);
 
   // Fetch All Students (for adding)
   const { data: allStudents = [] } = useQuery({
@@ -323,24 +384,84 @@ const GroupDetails = () => {
         </div>
       </div>
 
-      {/* Coin Modal */}
+      {/* Leaderboard (XP Reyting) Modal */}
       <Modal
          isOpen={isLeaderboardModalOpen}
          onClose={() => setIsLeaderboardModalOpen(false)}
-         title="Guruh Reytingi"
+         title="Guruh Reytingi 🏆"
          maxWidth="max-w-md"
       >
-        <div className="bg-white p-4 relative overflow-hidden">
-          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-amber-300 via-yellow-500 to-amber-600"></div>
-          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-amber-300 via-yellow-500 to-amber-600"></div>
-          
-            {/* Leaderboard List - Unified View */}
-            
-            {/* Leaderboard List - Unified View */}
-            <div className="flex flex-col gap-3">
-              {leaderboard.map((entry, index) => (
-                <div 
-                  key={entry.studentId} 
+        <div className="bg-white relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-amber-300 via-yellow-500 to-amber-600" />
+
+          {/* Period filter tabs */}
+          <div className="mb-4">
+            <div className="flex gap-1 bg-gray-100 p-1 rounded-lg flex-wrap">
+              {[
+                { key: 'ALL', label: 'Hammasi' },
+                { key: 'MONTH', label: 'Bu oy' },
+                { key: 'WEEK', label: 'Bu hafta' },
+                { key: 'CUSTOM', label: 'Sana' },
+              ].map(tab => (
+                <button
+                  key={tab.key}
+                  onClick={() => setLbFilterMode(tab.key)}
+                  className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all flex-1 ${
+                    lbFilterMode === tab.key
+                      ? 'bg-white shadow text-amber-600'
+                      : 'text-gray-500 hover:text-gray-800'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Month picker */}
+            {lbFilterMode === 'MONTH' && (
+              <div className="mt-3 flex items-center gap-2">
+                <input
+                  type="month"
+                  value={lbMonth}
+                  onChange={e => setLbMonth(e.target.value)}
+                  className="flex-1 px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-400 outline-none"
+                />
+              </div>
+            )}
+
+            {/* Custom date range */}
+            {lbFilterMode === 'CUSTOM' && (
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs text-gray-500 mb-1 block">Dan</label>
+                  <input
+                    type="date"
+                    value={lbDateFrom}
+                    onChange={e => setLbDateFrom(e.target.value)}
+                    className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-400 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 mb-1 block">Gacha</label>
+                  <input
+                    type="date"
+                    value={lbDateTo}
+                    onChange={e => setLbDateTo(e.target.value)}
+                    className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-amber-400 outline-none"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Leaderboard list */}
+          {filteredLeaderboard.length === 0 ? (
+            <div className="py-8 text-center text-gray-400 text-sm">Bu davrda coin berilmagan</div>
+          ) : (
+            <div className="flex flex-col gap-2.5 max-h-[60vh] overflow-y-auto pr-1">
+              {filteredLeaderboard.map((entry, index) => (
+                <div
+                  key={entry.studentId}
                   className={`flex items-center justify-between p-3 rounded-lg border transition-all ${
                     index === 0 ? 'bg-gradient-to-r from-amber-50 to-white border-amber-200 shadow-sm' :
                     index === 1 ? 'bg-gradient-to-r from-gray-50 to-white border-gray-200 shadow-sm' :
@@ -348,41 +469,38 @@ const GroupDetails = () => {
                     'bg-white border-gray-100 hover:border-gray-200 hover:shadow-sm'
                   }`}
                 >
-                   <div className="flex items-center gap-3 min-w-0">
-                      <div className={`w-8 h-8 flex-shrink-0 rounded-full flex items-center justify-center font-bold text-sm shadow-sm ${
-                           index === 0 ? 'bg-gradient-to-br from-amber-400 to-amber-600 text-white' :
-                           index === 1 ? 'bg-gradient-to-br from-gray-300 to-gray-500 text-white' :
-                           index === 2 ? 'bg-gradient-to-br from-orange-300 to-orange-500 text-white' :
-                           'bg-gray-100 text-gray-500'
-                      }`}>
-                          {index < 3 ? (
-                            index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉'
-                          ) : (
-                            index + 1
-                          )}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                           <h3 className={`font-bold truncate text-sm ${index < 3 ? 'text-gray-900' : 'text-gray-700'}`}>
-                              {entry.studentName}
-                           </h3>
-                           {index === 0 && <span className="text-[10px] text-amber-600 font-medium block truncate">Guruh yetakchisi</span>}
-                      </div>
-                   </div>
-                   
-                   <div className="flex items-center gap-2 flex-shrink-0 ml-2">
-                       <div className={`px-2 py-1 rounded-full font-bold flex items-center gap-1 text-xs ${
-                          index === 0 ? 'bg-amber-100 text-amber-700' :
-                          index === 1 ? 'bg-gray-100 text-gray-700' :
-                          index === 2 ? 'bg-orange-100 text-orange-700' :
-                          'bg-blue-50 text-blue-700'
-                       }`}>
-                          <span>{entry.totalCoins}</span>
-                          <span className="text-[10px]">🪙</span>
-                       </div>
-                   </div>
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className={`w-8 h-8 flex-shrink-0 rounded-full flex items-center justify-center font-bold text-sm shadow-sm ${
+                      index === 0 ? 'bg-gradient-to-br from-amber-400 to-amber-600 text-white' :
+                      index === 1 ? 'bg-gradient-to-br from-gray-300 to-gray-500 text-white' :
+                      index === 2 ? 'bg-gradient-to-br from-orange-300 to-orange-500 text-white' :
+                      'bg-gray-100 text-gray-500'
+                    }`}>
+                      {index < 3 ? (index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉') : (index + 1)}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <h3 className={`font-bold truncate text-sm ${index < 3 ? 'text-gray-900' : 'text-gray-700'}`}>
+                        {entry.studentName}
+                      </h3>
+                      {index === 0 && <span className="text-[10px] text-amber-600 font-medium block truncate">Guruh yetakchisi</span>}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                    <div className={`px-2 py-1 rounded-full font-bold flex items-center gap-1 text-xs ${
+                      index === 0 ? 'bg-amber-100 text-amber-700' :
+                      index === 1 ? 'bg-gray-100 text-gray-700' :
+                      index === 2 ? 'bg-orange-100 text-orange-700' :
+                      'bg-blue-50 text-blue-700'
+                    }`}>
+                      <span>{entry.totalCoins}</span>
+                      <span className="text-[10px]">🪙</span>
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
+          )}
         </div>
       </Modal>
 

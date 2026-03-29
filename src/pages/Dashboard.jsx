@@ -45,6 +45,10 @@ const Dashboard = () => {
       
       if (role === 'ADMIN') {
         try {
+          const now = new Date();
+          const currentYear = now.getFullYear();
+          const currentMonth = now.getMonth(); // 0-indexed
+
           const [studentsRes, teachersRes, orphanedRes, paymentsRes] = await Promise.all([
             usersApi.getStudents().catch(() => ({ data: [] })),
             usersApi.getTeachers().catch(() => ({ data: [] })),
@@ -56,14 +60,39 @@ const Dashboard = () => {
           data.totalTeachers = teachersRes.data.length;
           data.orphanedStudentsCount = orphanedRes.data.length;
           
-          const totalAmount = (paymentsRes.data || []).reduce((sum, p) => sum + Number(p.amount || 0), 0);
+          // ── Filter only CURRENT MONTH payments ──
+          const currentMonthPayments = (paymentsRes.data || []).filter(p => {
+            const d = new Date(p.paymentDate);
+            return d.getFullYear() === currentYear && d.getMonth() === currentMonth;
+          });
+          const monthlyAmount = currentMonthPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
           data.paymentStats = {
-            totalAmount: totalAmount
+            totalAmount: monthlyAmount,
+            currentMonthCount: currentMonthPayments.length
           };
         } catch (error) {
           console.error('Error fetching extra admin stats:', error);
         }
+      } else if (role === 'TEACHER') {
+        try {
+          const now = new Date();
+          const currentYear = now.getFullYear();
+          const currentMonth = now.getMonth();
+          // Re-fetch teacher payments and filter by current month
+          const paymentsRes = await paymentsApi.getTeacherPayments().catch(() => ({ data: [] }));
+          const currentMonthPayments = (paymentsRes.data || []).filter(p => {
+            const d = new Date(p.paymentDate);
+            return d.getFullYear() === currentYear && d.getMonth() === currentMonth;
+          });
+          const monthlyAmount = currentMonthPayments.reduce((sum, p) => sum + Number(p.amount || 0), 0);
+          if (data.paymentStats) {
+            data.paymentStats.totalAmount = monthlyAmount;
+          } else {
+            data.paymentStats = { totalAmount: monthlyAmount };
+          }
+        } catch (e) { /* ignore */ }
       }
+
       return data;
     },
     enabled: !!role,
@@ -80,6 +109,8 @@ const Dashboard = () => {
     }).format(Math.round(amount));
   };
 
+  const currentMonthLabel = new Date().toLocaleDateString('uz-UZ', { year: 'numeric', month: 'long' });
+
   const getStatCards = () => {
     if (!stats) return [];
 
@@ -88,13 +119,13 @@ const Dashboard = () => {
         { title: "Jami O'quvchilar", value: stats.totalStudents || 0, icon: FiUsers, bgColor: 'from-blue-500 to-blue-600' },
         { title: "O'qituvchilar", value: stats.totalTeachers || 0, icon: FiUserCheck, bgColor: 'from-purple-500 to-purple-600' },
         { title: 'Faol Guruhlar', value: stats.activeGroups || 0, icon: FiBook, bgColor: 'from-green-500 to-green-600' },
-        { title: 'Jami Daromad', value: formatCurrency(stats.paymentStats?.totalAmount), icon: FiTrendingUp, bgColor: 'from-orange-500 to-orange-600' },
+        { title: `Daromad (${currentMonthLabel})`, value: formatCurrency(stats.paymentStats?.totalAmount), icon: FiTrendingUp, bgColor: 'from-orange-500 to-orange-600' },
       ];
     } else if (role === 'TEACHER') {
       return [
         { title: "Mening O'quvchilarim", value: stats.totalStudents || 0, icon: FiUsers, bgColor: 'from-blue-500 to-blue-600' },
         { title: 'Guruhlarim', value: stats.totalGroups || 0, icon: FiBook, bgColor: 'from-purple-500 to-purple-600' },
-        { title: 'Yig\'ilgan Pul', value: formatCurrency(stats.paymentStats?.totalAmount), icon: FiTrendingUp, bgColor: 'from-green-500 to-green-600' },
+        { title: `Yig'ilgan Pul (${currentMonthLabel})`, value: formatCurrency(stats.paymentStats?.totalAmount), icon: FiTrendingUp, bgColor: 'from-green-500 to-green-600' },
       ];
     } else { // STUDENT
       return [

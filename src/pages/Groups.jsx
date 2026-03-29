@@ -24,6 +24,7 @@ const Groups = () => {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
+  const [showInactive, setShowInactive] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingGroup, setEditingGroup] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState({ open: false, groupId: null, groupName: '' });
@@ -73,11 +74,17 @@ const Groups = () => {
 
   const filteredGroups = useMemo(() => {
     if (!groups) return [];
-    return groups.filter(group => 
-      group.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      group.teacherName?.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-  }, [groups, searchTerm]);
+    return groups.filter(group => {
+      // Hide INACTIVE groups unless admin explicitly wants to see them
+      if (group.status === 'INACTIVE' && !showInactive) return false;
+      return (
+        group.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (group.teacherName?.toLowerCase() || '').includes(searchTerm.toLowerCase())
+      );
+    });
+  }, [groups, searchTerm, showInactive]);
+
+  const inactiveCount = useMemo(() => (groups || []).filter(g => g.status === 'INACTIVE').length, [groups]);
 
   const { data: teachers = [] } = useQuery({
     queryKey: ['teachers'],
@@ -323,15 +330,31 @@ const Groups = () => {
           )}
         </div>
 
-        <div className="relative w-full max-w-md">
-          <FiSearch className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Guruh nomi yoki o'qituvchi..."
-            className="w-full pl-11 pr-4 py-3 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none shadow-sm transition-all"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+        <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+          <div className="relative w-full max-w-md">
+            <FiSearch className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Guruh nomi yoki o'qituvchi..."
+              className="w-full pl-11 pr-4 py-3 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none shadow-sm transition-all"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+          {isAdmin && inactiveCount > 0 && (
+            <label className="flex items-center gap-2 cursor-pointer select-none px-4 py-2.5 bg-white border border-gray-200 rounded-2xl shadow-sm hover:border-gray-300 transition-colors">
+              <input
+                type="checkbox"
+                checked={showInactive}
+                onChange={(e) => setShowInactive(e.target.checked)}
+                className="w-4 h-4 accent-blue-600 cursor-pointer"
+              />
+              <span className="text-sm font-medium text-gray-600">
+                Noaktiv guruhlar
+                <span className="ml-1.5 bg-red-100 text-red-600 text-xs font-bold px-1.5 py-0.5 rounded-full">{inactiveCount}</span>
+              </span>
+            </label>
+          )}
         </div>
       </div>
 
