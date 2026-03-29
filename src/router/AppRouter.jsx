@@ -13,6 +13,7 @@ import Payments from '../pages/Payments';
 import NotFound from '../pages/NotFound';
 import Users from '../pages/Users';
 import OrphanedStudents from '../pages/students/OrphanedStudents';
+import GlobalLeaderboard from '../pages/reports/GlobalLeaderboard';
 
 /**
  * App Router - Backend bilan 100% mos
@@ -125,6 +126,10 @@ const router = createBrowserRouter([
       {
         path: 'users',
         element: <RoleProtectedRoute element={<Users />} allowedRoles={['ADMIN']} />,
+      },
+      {
+        path: 'leaderboard',
+        element: <RoleProtectedRoute element={<GlobalLeaderboard />} allowedRoles={['ADMIN']} />,
       },
       {
         path: '*',

@@ -16,6 +16,7 @@ const pageTitles = {
   '/groups': 'Guruhlar',
   '/payments': "To'lovlar",
   '/users': 'Foydalanuvchilar',
+  '/leaderboard': 'Global Reyting',
 };
 
 const Navbar = ({ onToggleSidebar, onToggleCollapse, sidebarCollapsed }) => {

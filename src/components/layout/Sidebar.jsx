@@ -9,7 +9,8 @@ import {
   FiX,
   FiShield,
   FiChevronsLeft,
-  FiChevronsRight
+  FiChevronsRight,
+  FiAward
 } from 'react-icons/fi';
 import { useAuth } from '../../hooks/useAuth';
 
@@ -34,6 +35,7 @@ const Sidebar = ({ isOpen, onClose, collapsed, onToggleCollapse }) => {
         { path: '/students', icon: FiUsers, label: "O'quvchilar" },
         { path: '/teachers', icon: FiUserCheck, label: "O'qituvchilar" },
         { path: '/payments', icon: FiCreditCard, label: "To'lovlar" },
+        { path: '/leaderboard', icon: FiAward, label: 'Global Reyting' },
         { path: '/users', icon: FiShield, label: 'Foydalanuvchilar' },
       ];
     }
